@@ -109,31 +109,33 @@ class SetupWizard(Adw.Dialog):
     def _easyeffects(self):
         page = Adw.PreferencesPage()
         found = Adw.PreferencesGroup(title="Your Presets")
-        count = len(presets.list_presets())
+        outputs, inputs = len(presets.list_presets("output")), len(presets.list_presets("input"))
         found.add(Adw.ActionRow(
-            title=f"{count} Easy Effects preset{'s' if count != 1 else ''} found",
+            title=f"{outputs} output and {inputs} input presets found",
             subtitle="Soundstage edits them in place, so Easy Effects keeps working with them"))
-        self.rules = presets.autoload_rules()
+        self.rules = {d: presets.autoload_rules(d) for d in ("output", "input")}
+        count = sum(len(r) for r in self.rules.values())
         self.import_rules = Adw.SwitchRow(
             title="Use Easy Effects' device presets",
-            subtitle=f"{len(self.rules)} device{'s' if len(self.rules) != 1 else ''} with a preset of their own",
-            active=bool(self.rules), sensitive=bool(self.rules))
+            subtitle=f"{count} device{'s' if count != 1 else ''} with a preset of their own",
+            active=bool(count), sensitive=bool(count))
         found.add(self.import_rules)
         page.add(found)
 
+        group = Adw.PreferencesGroup(
+            title="Apps Soundstage Replaces",
+            description="Turning these off stops them now and at login. You can turn them back on in "
+                        "their own settings.")
         conflicts = deps.active_conflicts()
-        if conflicts:
-            group = Adw.PreferencesGroup(
-                title="Apps Soundstage Replaces",
-                description="Turning these off stops them now and at login. You can turn them back on in "
-                            "their own settings.")
-            for c in conflicts:
-                row = Adw.ActionRow(title=c.title, subtitle=c.description)
-                button = Gtk.Button(label="Turn Off", valign=Gtk.Align.CENTER, css_classes=["destructive-action"])
-                button.connect("clicked", self._on_turn_off, c, row)
-                row.add_suffix(button)
-                group.add(row)
-            page.add(group)
+        for c in conflicts:
+            row = Adw.ActionRow(title=c.title, subtitle=c.description)
+            button = Gtk.Button(label="Turn Off", valign=Gtk.Align.CENTER, css_classes=["destructive-action"])
+            button.connect("clicked", self._on_turn_off, c, row)
+            row.add_suffix(button)
+            group.add(row)
+        if not conflicts:
+            group.add(Adw.ActionRow(title="No other audio effects apps are running"))
+        page.add(group)
         return page
 
     def _on_turn_off(self, button, conflict, row):
@@ -178,22 +180,22 @@ class SetupWizard(Adw.Dialog):
     def _on_finish(self):
         s = self.settings
         if self.import_rules.get_active():
-            for device, preset in self.rules.items():
-                s.device_presets.setdefault(device, preset)
+            for direction, rules in self.rules.items():
+                for device, preset in rules.items():
+                    getattr(s, direction)["device_presets"].setdefault(device, preset)
         s.layout = LAYOUTS[self.layout_row.get_selected()][0]
         i = self.hrir_row.get_selected()
         s.hrir = list(self.hrirs.values())[i - 1] if i > 0 else ""
         s.run_in_background = self.background_row.get_active()
         s.setup_done = True
-        if not s.preset:
-            available = presets.list_presets()
-            s.preset = next(iter(available), "")
         s.save()
         deps.set_autostart(self.autostart_row.get_active(), autostart_command())
         controller = self.app.controller
-        if controller.preset is None and s.preset:
-            controller.load_preset(s.preset)
+        for pipeline in controller.pipelines:
+            if pipeline.preset is None:
+                first = next(iter(presets.list_presets(pipeline.direction)), "")
+                if first:
+                    pipeline.load_preset(first)
         controller.start()
-        controller.queue_rebuild()
         self.app.hold_in_background()
         self.force_close()

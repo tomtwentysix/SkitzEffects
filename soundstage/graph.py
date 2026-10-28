@@ -1,7 +1,9 @@
-"""Builds the PipeWire filter-chain config that does all of the processing.
+"""Builds the PipeWire filter-chain configs that do all of the processing.
 
-Apps play into a lingering 5.1/7.1 null sink. The filter-chain captures that
-sink's monitor, runs the effects and plays into the real device. A stereo
+Apps play into a lingering 5.1/7.1 null sink. The output filter-chain captures
+that sink's monitor, runs the effects and plays into the real device. The input
+filter-chain captures the microphone and plays into a lingering virtual source
+that apps record from. A stereo
 effect chain with fewer inputs than the stream has channels is instantiated
 once per channel pair by filter-chain, which is how effects reach every
 speaker on a surround device.
@@ -17,6 +19,9 @@ from .config import LAYOUTS
 SINK = "soundstage_sink"
 CAPTURE = "soundstage_effects"
 PLAYBACK = "soundstage_output"
+SOURCE = "soundstage_source"
+MIC_CAPTURE = "soundstage_mic"
+MIC_PLAYBACK = "soundstage_mic_output"
 
 # Channel indices in a HeSuVi 14-channel HRIR, as (left ear, right ear).
 HESUVI = {"FL": (0, 1), "SL": (2, 3), "RL": (4, 5), "FC": (6, 13), "FR": (8, 7), "SR": (10, 9), "RR": (12, 11)}
@@ -134,41 +139,27 @@ def effect_chain(preset, enabled):
     return chain
 
 
-def build(preset, enabled, route, layout, hrir, target):
-    graph = Graph()
-    if route == "hrir":
-        inputs, left, right = hrir_downmix(graph, layout, hrir)
-    else:
-        inputs = [f"{graph.copy('in_l')}:In", f"{graph.copy('in_r')}:In"]
-        left, right = "in_l:Out", "in_r:Out"
+def stereo_chain(graph, preset, enabled, left, right):
     for effect_id, effect, settings in effect_chain(preset, enabled):
         left, right = add_effect(graph, effect_id, effect, settings, left, right)
+    return [left, right]
 
-    capture = LAYOUTS[layout] if route in ("passthrough", "hrir") else LAYOUTS["stereo"]
-    playback = LAYOUTS[layout] if route == "passthrough" else LAYOUTS["stereo"]
+
+def plain_inputs(graph):
+    return [f"{graph.copy('in_l')}:In", f"{graph.copy('in_r')}:In"], "in_l:Out", "in_r:Out"
+
+
+def config_text(description, graph, inputs, outputs, capture, playback):
+    # Both ends are passive, so nothing is held open while no app is playing or recording.
     module = {
         "name": "libpipewire-module-filter-chain",
         "args": {
-            "node.description": "Soundstage Effects",
-            "media.name": "Soundstage Effects",
-            "filter.graph": {"nodes": graph.nodes, "links": graph.links, "inputs": inputs,
-                             "outputs": [left, right]},
-            "capture.props": {
-                "node.name": CAPTURE,
-                "target.object": SINK,
-                "stream.capture.sink": True,
-                "node.passive": True,
-                "audio.channels": len(capture),
-                "audio.position": list(capture),
-            },
-            "playback.props": {
-                "node.name": PLAYBACK,
-                "target.object": target,
-                "node.dont-fallback": True,
-                "node.dont-reconnect": True,
-                "audio.channels": len(playback),
-                "audio.position": list(playback),
-            },
+            "node.description": description,
+            "media.name": description,
+            "filter.graph": {"nodes": graph.nodes, "links": graph.links, "inputs": inputs, "outputs": outputs},
+            "capture.props": {"node.passive": True, "node.dont-fallback": True, **capture},
+            "playback.props": {"node.passive": True, "node.dont-fallback": True, "node.dont-reconnect": True,
+                               **playback},
         },
     }
     conf = {
@@ -184,6 +175,38 @@ def build(preset, enabled, route, layout, hrir, target):
         ],
     }
     return json.dumps(conf, indent=2)
+
+
+def channels(positions):
+    return {"audio.channels": len(positions), "audio.position": list(positions)}
+
+
+def build(preset, enabled, route, layout, hrir, target):
+    graph = Graph()
+    if route == "hrir":
+        inputs, left, right = hrir_downmix(graph, layout, hrir)
+    else:
+        inputs, left, right = plain_inputs(graph)
+    outputs = stereo_chain(graph, preset, enabled, left, right)
+    capture = LAYOUTS[layout] if route in ("passthrough", "hrir") else LAYOUTS["stereo"]
+    playback = LAYOUTS[layout] if route == "passthrough" else LAYOUTS["stereo"]
+    return config_text(
+        "Soundstage Effects", graph, inputs, outputs,
+        {"node.name": CAPTURE, "target.object": SINK, "stream.capture.sink": True, **channels(capture)},
+        {"node.name": PLAYBACK, "target.object": target, **channels(playback)},
+    )
+
+
+def build_input(preset, enabled, device):
+    graph = Graph()
+    inputs, left, right = plain_inputs(graph)
+    outputs = stereo_chain(graph, preset, enabled, left, right)
+    stereo = channels(LAYOUTS["stereo"])
+    return config_text(
+        "Soundstage Microphone Effects", graph, inputs, outputs,
+        {"node.name": MIC_CAPTURE, "target.object": device, **stereo},
+        {"node.name": MIC_PLAYBACK, "target.object": SOURCE, **stereo},
+    )
 
 
 def live_controls(effect_id, effect, settings):

@@ -61,6 +61,8 @@ class Conflict:
     flatpak: str = ""
     process: str = ""
     autostart: tuple = ()
+    # Prefixes of the PipeWire node names the app creates while it runs.
+    nodes: tuple = ()
 
     def autostart_files(self):
         folder = Path(GLib.get_user_config_dir()) / "autostart"
@@ -105,15 +107,23 @@ def _hidden(path):
 CONFLICTS = (
     Conflict("Easy Effects", "Soundstage uses its presets, but both cannot process audio at once",
              flatpak="com.github.wwmm.easyeffects", process="easyeffects",
-             autostart=("com.github.wwmm.easyeffects.desktop", "easyeffects-service.desktop")),
+             autostart=("com.github.wwmm.easyeffects.desktop", "easyeffects-service.desktop"),
+             nodes=("easyeffects_",)),
     Conflict("Virtual Surround", "Soundstage does the surround downmixing itself",
              flatpak="de.berny23.virtual_surround_manager",
-             autostart=("de.berny23.virtual_surround_manager.desktop",)),
+             autostart=("de.berny23.virtual_surround_manager.desktop",),
+             nodes=("effect_input.virtual-surround",)),
 )
+CONFLICT_NODES = tuple(prefix for c in CONFLICTS for prefix in c.nodes)
 
 
 def active_conflicts():
     return [c for c in CONFLICTS if c.active()]
+
+
+def running_conflicts(node_names):
+    """Conflicting apps seen in PipeWire, which is cheaper to check than their processes."""
+    return [c for c in CONFLICTS if any(n.startswith(c.nodes) for n in node_names)]
 
 
 AUTOSTART = Path(GLib.get_user_config_dir()) / "autostart" / "uk.co.solarflareit.Soundstage.desktop"

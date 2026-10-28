@@ -60,7 +60,7 @@ class SurroundPage(Adw.PreferencesPage):
         downmix.add(self.hrir_row)
         self.add(downmix)
 
-        controller.connect("state-changed", lambda *_: self.refresh())
+        controller.output.connect("state-changed", lambda *_: self.refresh())
         controller.connect("devices-changed", lambda *_: self.refresh())
         self.refresh()
 
@@ -75,19 +75,20 @@ class SurroundPage(Adw.PreferencesPage):
         self._filling = False
 
     def refresh(self):
-        sink = self.controller.output
+        sink = self.controller.output.device
         if sink:
             self.device_row.set_subtitle(f"{sink.description} · {sink.channels} channels")
         else:
             self.device_row.set_subtitle("No output device")
-        route = ROUTES.get(self.controller.route, "Not running")
-        if self.controller.route == "stereo" and not self.controller.hrir_ok() and self.controller.settings.downmix != "never":
+        route = ROUTES.get(self.controller.output.route, "Not running")
+        settings = self.controller.settings
+        if self.controller.output.route == "stereo" and not self.controller.hrir_ok() and settings.downmix != "never":
             route += " (choose an HRIR to place the surround channels)"
         self.route_row.set_subtitle(route)
 
     def _apply(self):
         self.controller.settings.save()
-        self.controller.queue_rebuild()
+        self.controller.output.queue_rebuild()
         self.refresh()
 
     def _on_layout(self, row, _):

@@ -30,15 +30,16 @@ def runtime_dir():
 CONFIG_PATH = config_dir() / "config.json"
 
 
+def side():
+    # device_presets maps a device's node.name to the preset loaded when Soundstage switches to it.
+    return {"enabled": True, "preset": "", "device": "", "device_presets": {}, "device_names": {}}
+
+
 @dataclass
 class Settings:
     setup_done: bool = False
-    enabled: bool = True
-    preset: str = ""
-    # Hardware sink node.name -> preset name; "" keeps whatever is loaded.
-    device_presets: dict = field(default_factory=dict)
-    device_names: dict = field(default_factory=dict)
-    output_device: str = ""
+    output: dict = field(default_factory=side)
+    input: dict = field(default_factory=side)
     layout: str = "7.1"
     # "auto" downmixes with the HRIR only when the device has fewer channels than the layout.
     downmix: str = "auto"
@@ -58,4 +59,7 @@ def load():
     except (OSError, ValueError):
         return Settings()
     known = {f.name for f in fields(Settings)}
-    return Settings(**{k: v for k, v in data.items() if k in known})
+    settings = Settings(**{k: v for k, v in data.items() if k in known})
+    for direction in ("output", "input"):
+        setattr(settings, direction, {**side(), **getattr(settings, direction)})
+    return settings

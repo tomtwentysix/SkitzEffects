@@ -1,4 +1,4 @@
-"""Live view of PipeWire's sinks and default device, fed by `pw-dump --monitor`."""
+"""Live view of PipeWire's devices and defaults, fed by `pw-dump --monitor`."""
 
 import json
 from dataclasses import dataclass
@@ -9,7 +9,7 @@ OWN_PREFIX = "soundstage_"
 
 
 @dataclass
-class Sink:
+class Device:
     id: int
     name: str
     description: str
@@ -116,9 +116,8 @@ class PipeWire(GObject.Object):
                 return value.get("name", "") if isinstance(value, dict) else ""
         return ""
 
-    @property
-    def default_sink(self):
-        return self._default("default.audio.sink")
+    def default(self, media_class):
+        return self._default("default.audio.sink" if media_class == "Audio/Sink" else "default.audio.source")
 
     def nodes(self):
         for oid, obj in self.objects.items():
@@ -137,19 +136,20 @@ class PipeWire(GObject.Object):
                 return _channels(info)
         return 0
 
-    def sinks(self):
+    def node_names(self):
+        return [info.get("props", {}).get("node.name", "") for _oid, info in self.nodes()]
+
+    def devices(self, media_class, exclude=()):
+        """Best first; leaves out Soundstage's own nodes and any whose name starts with one in exclude."""
         out = []
         for oid, info in self.nodes():
             props = info.get("props", {})
             name = props.get("node.name", "")
-            if props.get("media.class") != "Audio/Sink" or name.startswith(OWN_PREFIX):
+            if props.get("media.class") != media_class or name.startswith((OWN_PREFIX, *exclude)):
                 continue
-            out.append(Sink(oid, name, props.get("node.description") or name, _channels(info),
-                            int(props.get("priority.session", 0)), bool(props.get("node.virtual"))))
-        return sorted(out, key=lambda s: (s.virtual, -s.priority, s.description.casefold()))
-
-    def sink(self, name):
-        return next((s for s in self.sinks() if s.name == name), None)
+            out.append(Device(oid, name, props.get("node.description") or name, _channels(info),
+                              int(props.get("priority.session", 0)), bool(props.get("node.virtual"))))
+        return sorted(out, key=lambda d: (d.virtual, -d.priority, d.description.casefold()))
 
     def set_default(self, name):
         oid = self.node_id(name)
@@ -165,16 +165,16 @@ class PipeWire(GObject.Object):
             params += [key, value]
         run(["pw-cli", "set-param", str(oid), "Props", json.dumps({"params": params})])
 
-    def create_sink(self, name, description, positions):
+    def create_virtual(self, name, description, media_class, positions):
         props = {
             "factory.name": "support.null-audio-sink",
             "node.name": name,
             "node.description": description,
-            "media.class": "Audio/Sink",
+            "media.class": media_class,
             "audio.channels": len(positions),
             "audio.position": list(positions),
             "monitor.channel-volumes": True,
-            # Keeps the sink after pw-cli exits, so apps stay connected while effects restart.
+            # Keeps the node after pw-cli exits, so apps stay connected while effects restart.
             "object.linger": True,
         }
         run(["pw-cli", "create-node", "adapter", json.dumps(props)])

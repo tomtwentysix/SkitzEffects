@@ -1,4 +1,4 @@
-"""Keeps the sink, the filter-chain process and the loaded preset in step with PipeWire."""
+"""Keeps the virtual devices, the filter-chain processes and the loaded presets in step with PipeWire."""
 
 import ctypes
 import signal
@@ -6,7 +6,7 @@ import subprocess
 
 from gi.repository import GLib, GObject
 
-from . import config, graph, plugins, presets
+from . import config, deps, graph, plugins, presets
 from .config import LAYOUTS
 from .pipewire import PipeWire
 
@@ -17,111 +17,111 @@ def _die_with_parent():
     ctypes.CDLL("libc.so.6").prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
 
 
-class Controller(GObject.Object):
+class Pipeline(GObject.Object):
+    """One direction: output (apps -> sink -> effects -> speakers) or input (mic -> effects -> source -> apps)."""
+
     __gsignals__ = {
         "preset-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "state-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
-        "devices-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
-    def __init__(self, settings):
+    def __init__(self, controller, direction):
         super().__init__()
-        self.settings = settings
-        self.preset = presets.load(settings.preset) if settings.preset else None
-        self.pw = None
+        self.controller = controller
+        self.direction = direction
+        output = direction == "output"
+        self.media_class = "Audio/Sink" if output else "Audio/Source"
+        self.virtual = graph.SINK if output else graph.SOURCE
+        self.virtual_class = "Audio/Sink" if output else "Audio/Source/Virtual"
+        self.virtual_description = "Soundstage" if output else "Soundstage Microphone"
+        self.control_node = graph.CAPTURE if output else graph.MIC_CAPTURE
+        self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.route = ""
-        self.running = False
         self._proc = None
         self._conf = ""
         self._save_id = 0
         self._rebuild_id = 0
-        self._devices = ()
-
-    def start(self):
-        if self.running:
-            return
-        self.running = True
-        self.pw = PipeWire()
-        self.pw.connect("changed", self._on_pipewire)
-
-    def shutdown(self):
-        if not self.running:
-            return
-        self._flush_save()
-        self._stop_chain()
-        if self.settings.output_device:
-            self.pw.set_default(self.settings.output_device)
-        self.pw.destroy(graph.SINK)
-        self.pw.stop()
-        self.running = False
 
     @property
-    def output(self):
-        return self.pw.sink(self.settings.output_device) if self.pw else None
+    def state(self):
+        return getattr(self.controller.settings, self.direction)
 
-    def _on_pipewire(self, _pw):
+    @property
+    def pw(self):
+        return self.controller.pw
+
+    def devices(self):
+        return self.pw.devices(self.media_class, deps.CONFLICT_NODES) if self.pw else []
+
+    @property
+    def device(self):
+        return next((d for d in self.devices() if d.name == self.state["device"]), None)
+
+    def positions(self):
+        return LAYOUTS[self.controller.settings.layout] if self.direction == "output" else LAYOUTS["stereo"]
+
+    def sync(self):
         pw = self.pw
-        devices = tuple((s.name, s.description, s.channels) for s in pw.sinks())
-        if devices != self._devices:
-            self._devices = devices
-            self.emit("devices-changed")
-        positions = LAYOUTS[self.settings.layout]
-        sink_channels = pw.node_channels(graph.SINK)
-        if sink_channels != len(positions):
-            if sink_channels:
-                pw.destroy(graph.SINK)
+        positions = self.positions()
+        channels = pw.node_channels(self.virtual)
+        if channels != len(positions):
+            if channels:
+                pw.destroy(self.virtual)
             else:
-                pw.create_sink(graph.SINK, "Soundstage", positions)
+                pw.create_virtual(self.virtual, self.virtual_description, self.virtual_class, positions)
             return
-        default = pw.default_sink
-        if default and default != graph.SINK and pw.sink(default):
+        default = pw.default(self.media_class)
+        devices = self.devices()
+        if default and default != self.virtual and any(d.name == default for d in devices):
             # The user picked a device elsewhere (GNOME Settings, the volume menu):
-            # play through it and take the default back.
-            self.select_output(default)
-            pw.set_default(graph.SINK)
-        elif self.output is None:
-            fallback = next((s for s in pw.sinks() if not s.virtual), None)
+            # use it and take the default back.
+            self.select_device(default)
+            pw.set_default(self.virtual)
+        elif self.device is None:
+            fallback = next((d for d in devices if not d.virtual), None)
             if fallback:
-                self.select_output(fallback.name)
+                self.select_device(fallback.name)
         self.queue_rebuild()
 
-    def select_output(self, name):
-        if name == self.settings.output_device:
+    def select_device(self, name):
+        if name == self.state["device"]:
             return
-        self.settings.output_device = name
-        sink = self.pw.sink(name)
-        if sink:
-            self.settings.device_names[name] = sink.description
-        rule = self.settings.device_presets.get(name)
-        if rule and rule in presets.list_presets():
+        self.state["device"] = name
+        device = next((d for d in self.devices() if d.name == name), None)
+        if device:
+            self.state["device_names"][name] = device.description
+        rule = self.state["device_presets"].get(name)
+        if rule and rule in presets.list_presets(self.direction):
             self.load_preset(rule)
-        self.settings.save()
+        self.controller.settings.save()
         self.emit("state-changed")
         self.queue_rebuild()
 
     def load_preset(self, name):
         self._flush_save()
-        self.preset = presets.load(name)
-        self.settings.preset = name if self.preset else ""
-        self.settings.save()
+        self.preset = presets.load(name, self.direction)
+        self.state["preset"] = name if self.preset else ""
+        self.controller.settings.save()
         self.emit("preset-changed")
         self.queue_rebuild()
 
     def new_preset(self, name):
         self._flush_save()
-        self.preset = presets.create(name)
-        self.settings.preset = name
-        self.settings.save()
+        self.preset = presets.create(name, self.direction)
+        self.state["preset"] = name
+        self.controller.settings.save()
         self.emit("preset-changed")
         self.queue_rebuild()
 
     def set_enabled(self, on):
-        self.settings.enabled = on
-        self.settings.save()
+        self.state["enabled"] = on
+        self.controller.settings.save()
         self.queue_rebuild()
 
-    def hrir_ok(self):
-        return presets.wav_channels(self.settings.hrir) == 14
+    def restart(self):
+        self._stop_chain()
+        self._conf = ""
+        self.queue_rebuild()
 
     def queue_rebuild(self):
         if not self._rebuild_id:
@@ -129,37 +129,40 @@ class Controller(GObject.Object):
 
     def _rebuild(self):
         self._rebuild_id = 0
-        sink = self.output
-        if not self.running or sink is None or not self.pw.node_id(graph.SINK):
+        device = self.device
+        if not self.controller.running or device is None or not self.pw.node_id(self.virtual):
             return False
-        route, conf = self._build(sink)
+        route, conf = self._build(device)
         if route != self.route:
             self.route = route
             self.emit("state-changed")
-        if conf == self._conf and self._proc and self._proc.poll() is None:
+        if conf == self._conf and self.chain_running:
             return False
         self._conf = conf
-        path = config.runtime_dir() / "effects.conf"
+        path = config.runtime_dir() / f"{self.direction}.conf"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(conf)
         self._stop_chain()
         self._proc = subprocess.Popen(["pipewire", "-c", str(path)], preexec_fn=_die_with_parent,
                                       stdin=subprocess.DEVNULL)
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, self._proc.pid, self._on_chain_exit, self._proc)
+        self.emit("state-changed")
         return False
 
-    def _build(self, sink):
-        route = graph.choose_route(len(LAYOUTS[self.settings.layout]), sink.channels, self.settings.downmix,
-                                   self.hrir_ok())
-        return route, graph.build(self.preset, self.settings.enabled, route, self.settings.layout,
-                                  self.settings.hrir, sink.name)
+    def _build(self, device):
+        enabled = self.state["enabled"]
+        if self.direction == "input":
+            return "stereo", graph.build_input(self.preset, enabled, device.name)
+        s = self.controller.settings
+        route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
+        return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name)
 
     def _on_chain_exit(self, _pid, status, proc):
         proc.poll()
         if proc is self._proc:
             self._proc = None
             self._conf = ""
-            print(f"soundstage: filter-chain exited with status {status}")
+            print(f"soundstage: {self.direction} filter-chain exited with status {status}")
             self.emit("state-changed")
 
     def _stop_chain(self):
@@ -185,11 +188,18 @@ class Controller(GObject.Object):
         controls = graph.live_controls(effect_id, effect, self.preset.settings(effect_id))
         if controls is None:
             self.queue_rebuild()
-        elif self.preset.enabled(effect_id):
-            self.pw.set_controls(graph.CAPTURE, controls)
+        elif self.preset.enabled(effect_id) and self.pw:
+            self.pw.set_controls(self.control_node, controls)
             # The running chain now matches the edited preset, so it needs no restart.
-            if self.output:
-                self._conf = self._build(self.output)[1]
+            if self.device:
+                self._conf = self._build(self.device)[1]
+
+    def shutdown(self):
+        self._flush_save()
+        self._stop_chain()
+        if self.state["device"]:
+            self.pw.set_default(self.state["device"])
+        self.pw.destroy(self.virtual)
 
     def _queue_save(self):
         if self._save_id:
@@ -207,3 +217,58 @@ class Controller(GObject.Object):
         if self.preset:
             self.preset.save()
         return False
+
+
+class Controller(GObject.Object):
+    __gsignals__ = {
+        "devices-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "conflicts-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+    }
+
+    def __init__(self, settings):
+        super().__init__()
+        self.settings = settings
+        self.pw = None
+        self.running = False
+        self.conflicts = []
+        self.output = Pipeline(self, "output")
+        self.input = Pipeline(self, "input")
+        self._devices = ()
+
+    @property
+    def pipelines(self):
+        return (self.output, self.input)
+
+    def start(self):
+        if self.running:
+            return
+        self.running = True
+        self.pw = PipeWire()
+        self.pw.connect("changed", self._on_pipewire)
+
+    def shutdown(self):
+        if not self.running:
+            return
+        for pipeline in self.pipelines:
+            pipeline.shutdown()
+        self.pw.stop()
+        self.running = False
+
+    def hrir_ok(self):
+        return presets.wav_channels(self.settings.hrir) == 14
+
+    def restart_chains(self):
+        for pipeline in self.pipelines:
+            pipeline.restart()
+
+    def _on_pipewire(self, pw):
+        devices = tuple((d.name, d.description, d.channels) for p in self.pipelines for d in p.devices())
+        if devices != self._devices:
+            self._devices = devices
+            self.emit("devices-changed")
+        conflicts = deps.running_conflicts(pw.node_names())
+        if conflicts != self.conflicts:
+            self.conflicts = conflicts
+            self.emit("conflicts-changed")
+        for pipeline in self.pipelines:
+            pipeline.sync()

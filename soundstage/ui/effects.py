@@ -22,9 +22,9 @@ def frequency_label(hz):
 
 
 class EffectsView(Adw.Bin):
-    def __init__(self, controller):
+    def __init__(self, pipeline):
         super().__init__()
-        self.controller = controller
+        self.pipeline = pipeline
         self.selected = None
 
         self.list = Gtk.ListBox(css_classes=["navigation-sidebar"])
@@ -47,7 +47,7 @@ class EffectsView(Adw.Bin):
 
     @property
     def preset(self):
-        return self.controller.preset
+        return self.pipeline.preset
 
     def _add_popover(self):
         menu = Gio.Menu()
@@ -64,14 +64,16 @@ class EffectsView(Adw.Bin):
         if self.preset is None:
             return
         effect_id = self.preset.add(kind)
-        self.controller.changed(effect_id, structural=True)
+        self.pipeline.changed(effect_id, structural=True)
         self.reload(select=effect_id)
 
     def reload(self, select=None):
         self.list.remove_all()
         if self.preset is None:
+            output = self.pipeline.direction == "output"
+            icon = "audio-speakers-symbolic" if output else "audio-input-microphone-symbolic"
             self.content.set_content(Adw.StatusPage(
-                icon_name="audio-speakers-symbolic", title="No Preset Loaded",
+                icon_name=icon, title="No Preset Loaded",
                 description="Choose a preset from the menu above, or create a new one"))
             return
         target = None
@@ -103,7 +105,7 @@ class EffectsView(Adw.Bin):
     def _toggle(self, effect_id, on):
         if self.preset.enabled(effect_id) != on:
             self.preset.set_enabled(effect_id, on)
-            self.controller.changed(effect_id, structural=True)
+            self.pipeline.changed(effect_id, structural=True)
 
     def _on_row_selected(self, _list, row):
         if row is None:
@@ -133,12 +135,12 @@ class EffectsView(Adw.Bin):
     def _remove(self, effect_id):
         self.preset.remove(effect_id)
         self.selected = None
-        self.controller.changed(effect_id, structural=True)
+        self.pipeline.changed(effect_id, structural=True)
         self.reload()
 
     def _move(self, effect_id, offset):
         self.preset.move(effect_id, offset)
-        self.controller.changed(effect_id, structural=True)
+        self.pipeline.changed(effect_id, structural=True)
         self.reload(select=effect_id)
 
     def _page(self, effect_id, effect):
@@ -150,7 +152,7 @@ class EffectsView(Adw.Bin):
         page = Adw.PreferencesPage()
 
         def on_change(structural=False):
-            self.controller.changed(effect_id, structural)
+            self.pipeline.changed(effect_id, structural)
 
         if effect.kind == "convolver":
             page.add(self._convolver_group(settings, on_change))
