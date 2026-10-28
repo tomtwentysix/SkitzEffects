@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Soundstage
+Comment=Audio effects with surround sound and HRIR downmixing
+Exec=soundstage
+Icon=uk.co.solarflareit.Soundstage
+Categories=AudioVideo;Audio;
+Keywords=equalizer;effects;surround;hrir;easyeffects;pipewire;
+StartupNotify=true
