@@ -19,6 +19,7 @@ Requires:       wireplumber
 Requires:       pipewire-module-filter-chain-lv2
 Requires:       lsp-plugins-lv2
 Requires:       lv2-zam-plugins
+Requires:       lv2-mdala-plugins
 
 %description
 Soundstage applies Easy Effects presets to everything you play and record,
@@ -37,6 +38,7 @@ install -d %{buildroot}%{_datadir}/%{name}
 cp -a soundstage %{buildroot}%{_datadir}/%{name}/
 install -Dm755 packaging/soundstage %{buildroot}%{_bindir}/soundstage
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications data/uk.co.solarflareit.Soundstage.desktop
+cp -a data/icons %{buildroot}%{_datadir}/
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Soundstage.desktop
@@ -47,6 +49,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.So
 %{_bindir}/soundstage
 %{_datadir}/%{name}/
 %{_datadir}/applications/uk.co.solarflareit.Soundstage.desktop
+%{_datadir}/icons/hicolor/scalable/apps/uk.co.solarflareit.Soundstage.svg
+%{_datadir}/icons/hicolor/symbolic/apps/uk.co.solarflareit.Soundstage-symbolic.svg
 
 %changelog
 * Wed Oct 28 2026 Tom <tom@solarflareit.co.uk> - 0.1.0-1

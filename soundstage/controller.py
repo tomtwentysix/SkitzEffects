@@ -1,8 +1,10 @@
 """Keeps the virtual devices, the filter-chain processes and the loaded presets in step with PipeWire."""
 
 import ctypes
+import os
 import signal
 import subprocess
+import time
 
 from gi.repository import GLib, GObject
 
@@ -11,6 +13,8 @@ from .config import LAYOUTS
 from .pipewire import PipeWire
 
 PR_SET_PDEATHSIG = 1
+# Seconds a chosen device may be gone before another one stands in for it.
+MISSING_GRACE = 5
 
 
 def _die_with_parent():
@@ -38,6 +42,9 @@ class Pipeline(GObject.Object):
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.route = ""
         self._proc = None
+        self._started = 0.0
+        self._failures = 0
+        self._missing_since = 0.0
         self._conf = ""
         self._save_id = 0
         self._rebuild_id = 0
@@ -55,7 +62,16 @@ class Pipeline(GObject.Object):
 
     @property
     def device(self):
-        return next((d for d in self.devices() if d.name == self.state["device"]), None)
+        """The chosen device, or while it is gone a stand-in that is not saved.
+
+        Devices also vanish for a moment whenever WirePlumber restarts, so the
+        stand-in only takes over once the chosen one has been gone for a while.
+        """
+        devices = self.devices()
+        chosen = next((d for d in devices if d.name == self.state["device"]), None)
+        if chosen or not self._missing_since or time.monotonic() - self._missing_since < MISSING_GRACE:
+            return chosen
+        return next((d for d in devices if not d.virtual), None)
 
     def positions(self):
         return LAYOUTS[self.controller.settings.layout] if self.direction == "output" else LAYOUTS["stereo"]
@@ -77,10 +93,19 @@ class Pipeline(GObject.Object):
             # use it and take the default back.
             self.select_device(default)
             pw.set_default(self.virtual)
-        elif self.device is None:
+        elif not self.state["device"]:
             fallback = next((d for d in devices if not d.virtual), None)
             if fallback:
                 self.select_device(fallback.name)
+        if any(d.name == self.state["device"] for d in devices):
+            self._missing_since = 0.0
+        elif not self._missing_since:
+            self._missing_since = time.monotonic()
+            GLib.timeout_add_seconds(MISSING_GRACE + 1, lambda: self.queue_rebuild() or False)
+        if self.direction == "input" and pw.node_id(graph.MIC_PLAYBACK):
+            if not pw.linked(graph.MIC_PLAYBACK, self.virtual):
+                pw.link(graph.MIC_PLAYBACK, self.virtual)
+        self._check_chain()
         self.queue_rebuild()
 
     def select_device(self, name):
@@ -121,6 +146,7 @@ class Pipeline(GObject.Object):
     def restart(self):
         self._stop_chain()
         self._conf = ""
+        self._failures = 0
         self.queue_rebuild()
 
     def queue_rebuild(self):
@@ -136,8 +162,10 @@ class Pipeline(GObject.Object):
         if route != self.route:
             self.route = route
             self.emit("state-changed")
-        if conf == self._conf and self.chain_running:
+        if conf == self._conf and (self.chain_running or self._failures >= 3):
             return False
+        if conf != self._conf:
+            self._failures = 0
         self._conf = conf
         path = config.runtime_dir() / f"{self.direction}.conf"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,7 +173,9 @@ class Pipeline(GObject.Object):
         self._stop_chain()
         self._proc = subprocess.Popen(["pipewire", "-c", str(path)], preexec_fn=_die_with_parent,
                                       stdin=subprocess.DEVNULL)
+        self._started = time.monotonic()
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, self._proc.pid, self._on_chain_exit, self._proc)
+        GLib.timeout_add_seconds(3, self._check_chain)
         self.emit("state-changed")
         return False
 
@@ -157,26 +187,52 @@ class Pipeline(GObject.Object):
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
         return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name)
 
+    def _check_chain(self):
+        """Restarts a chain whose streams were torn down while its process lives on.
+
+        filter-chain destroys its streams when a target goes away and the stream
+        may not reconnect, but keeps running with nothing in the graph.
+        """
+        if not self.chain_running or time.monotonic() - self._started < 3:
+            return False
+        if self.pw.node_id(self.control_node) is not None:
+            self._failures = 0
+        elif self._failures < 3:
+            self._failures += 1
+            print(f"soundstage: {self.direction} filter-chain lost its streams, restarting")
+            self._stop_chain()
+            self.queue_rebuild()
+        else:
+            self._stop_chain()
+            self.emit("state-changed")
+        return False
+
     def _on_chain_exit(self, _pid, status, proc):
-        proc.poll()
+        # GLib reaps the chain, so Popen's own wait() and poll() are never used on it.
+        proc.returncode = status
         if proc is self._proc:
             self._proc = None
-            self._conf = ""
+            self._failures += 1
             print(f"soundstage: {self.direction} filter-chain exited with status {status}")
             self.emit("state-changed")
+            self.queue_rebuild()
 
     def _stop_chain(self):
-        if self._proc and self._proc.poll() is None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-        self._proc = None
+        proc, self._proc = self._proc, None
+        if proc is None or proc.returncode is not None:
+            return
+        proc.terminate()
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            # WNOWAIT leaves the exit status for the child watch to collect.
+            if os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                return
+            time.sleep(0.02)
+        proc.kill()
 
     @property
     def chain_running(self):
-        return self._proc is not None and self._proc.poll() is None
+        return self._proc is not None and self._proc.returncode is None
 
     def changed(self, effect_id, structural=False):
         """Called after the UI edits the preset; saves it and applies the change."""

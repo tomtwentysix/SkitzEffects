@@ -110,10 +110,22 @@ def add_effect(graph, effect_id, effect, settings, left, right):
         return (graph.convolver(f"{name}_l", path, 0, gain, left),
                 graph.convolver(f"{name}_r", path, 1 if stereo else 0, gain, right))
     in_l, in_r, out_l, out_r = effect.ports
+    if effect.gain_nodes:
+        left, right = gain_stage(graph, f"{name}_in", settings.get("input-gain", 0), left, right)
     graph.add(type="lv2", plugin=effect.uri, name=name, control=effect.controls(settings))
     graph.link(left, f"{name}:{in_l}")
     graph.link(right, f"{name}:{in_r}")
-    return f"{name}:{out_l}", f"{name}:{out_r}"
+    left, right = f"{name}:{out_l}", f"{name}:{out_r}"
+    if effect.gain_nodes:
+        left, right = gain_stage(graph, f"{name}_out", settings.get("output-gain", 0), left, right)
+    return left, right
+
+
+def gain_stage(graph, name, gain, left, right):
+    for side, src in (("l", left), ("r", right)):
+        graph.add(type="builtin", label="linear", name=f"{name}_{side}", control={"Mult": db(gain), "Add": 0.0})
+        graph.link(src, f"{name}_{side}:In")
+    return f"{name}_l:Out", f"{name}_r:Out"
 
 
 def hrir_downmix(graph, layout, hrir):
@@ -205,7 +217,8 @@ def build_input(preset, enabled, device):
     return config_text(
         "Soundstage Microphone Effects", graph, inputs, outputs,
         {"node.name": MIC_CAPTURE, "target.object": device, **stereo},
-        {"node.name": MIC_PLAYBACK, "target.object": SOURCE, **stereo},
+        # WirePlumber only links playback streams to sinks, so the controller links this one to the source.
+        {"node.name": MIC_PLAYBACK, "node.autoconnect": False, **stereo},
     )
 
 
@@ -214,4 +227,9 @@ def live_controls(effect_id, effect, settings):
     if effect.kind == "convolver":
         return None
     name = node_name(effect_id)
-    return {f"{name}:{port}": value for port, value in effect.controls(settings).items()}
+    controls = {f"{name}:{port}": value for port, value in effect.controls(settings).items()}
+    if effect.gain_nodes:
+        for stage, key in (("in", "input-gain"), ("out", "output-gain")):
+            for side in "lr":
+                controls[f"{name}_{stage}_{side}:Mult"] = db(settings.get(key, 0))
+    return controls

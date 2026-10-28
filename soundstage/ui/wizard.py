@@ -36,7 +36,9 @@ class SetupWizard(Adw.Dialog):
         view = Adw.ToolbarView(content=content)
         view.add_top_bar(Adw.HeaderBar())
         view.add_bottom_bar(button)
-        return Adw.NavigationPage(title=title, tag=tag, child=view)
+        page = Adw.NavigationPage(title=title, tag=tag, child=view)
+        page.connect("shown", lambda _p: button.grab_focus())
+        return page
 
     def _build(self, tag):
         if tag == "components":
@@ -71,7 +73,7 @@ class SetupWizard(Adw.Dialog):
         missing = deps.missing()
         for c in deps.COMPONENTS:
             row = Adw.ActionRow(title=c.title, subtitle=c.description)
-            icon = "emblem-ok-symbolic" if c not in missing else "dialog-warning-symbolic"
+            icon = "object-select-symbolic" if c not in missing else "dialog-warning-symbolic"
             row.add_suffix(Gtk.Image(icon_name=icon, css_classes=["success" if c not in missing else "warning"]))
             self._component_rows.append(row)
             self.components_group.add(row)

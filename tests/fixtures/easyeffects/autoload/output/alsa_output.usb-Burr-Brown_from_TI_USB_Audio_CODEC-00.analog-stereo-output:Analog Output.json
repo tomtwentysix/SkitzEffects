@@ -1,0 +1,6 @@
+{
+    "device": "alsa_output.usb-Burr-Brown_from_TI_USB_Audio_CODEC-00.analog-stereo-output",
+    "device-description": "Midas UMC22 Analog Stereo",
+    "device-profile": "Analog Output",
+    "preset-name": "HS8"
+}

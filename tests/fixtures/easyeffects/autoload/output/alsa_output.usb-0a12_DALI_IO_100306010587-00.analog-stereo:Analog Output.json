@@ -1,0 +1,6 @@
+{
+    "device": "alsa_output.usb-0a12_DALI_IO_100306010587-00.analog-stereo",
+    "device-description": "Dali IO6 Analog Stereo",
+    "device-profile": "Analog Output",
+    "preset-name": "Dali iO6"
+}

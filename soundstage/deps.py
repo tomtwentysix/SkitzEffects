@@ -39,6 +39,7 @@ COMPONENTS = (
     Component("LSP plugins", "Equalizer, compressor, limiter, gate, loudness and autogain", "lsp-plugins-lv2",
               bundles=("lsp-plugins.lv2",)),
     Component("ZAM plugins", "Maximizer", "lv2-zam-plugins", bundles=("ZaMaximX2.lv2",)),
+    Component("MDA plugins", "Bass loudness", "lv2-mdala-plugins", bundles=("mda.lv2",)),
 )
 
 

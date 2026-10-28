@@ -1,6 +1,7 @@
 """Live view of PipeWire's devices and defaults, fed by `pw-dump --monitor`."""
 
 import json
+import time
 from dataclasses import dataclass
 
 from gi.repository import Gio, GLib, GObject
@@ -46,14 +47,16 @@ class PipeWire(GObject.Object):
 
     def __init__(self):
         super().__init__()
-        self.objects = {}
-        self.metadata = {}
         self.ready = False
-        self._lines = []
         self._proc = None
         self._start()
 
     def _start(self):
+        # A restarted pw-dump describes a new daemon from scratch, with new ids.
+        self.objects = {}
+        self.metadata = {}
+        # Actions sent but not yet seen in pw-dump, as {key: deadline}; see _once().
+        self._pending = {}
         self._proc = Gio.Subprocess.new(["pw-dump", "--monitor", "--no-colors"], Gio.SubprocessFlags.STDOUT_PIPE)
         self._stream = Gio.DataInputStream.new(self._proc.get_stdout_pipe())
         self._lines = []
@@ -107,7 +110,28 @@ class PipeWire(GObject.Object):
             elif obj.get("info") and oid in self.objects:
                 self.objects[oid]["info"] = obj["info"]
         self.ready = True
+        defaults = (self.default("Audio/Sink"), self.default("Audio/Source"))
+        for key in list(self._pending):
+            action, target = key
+            if (action == "create" and self.node_id(target) is not None
+                    or action == "destroy" and target not in self.objects
+                    or action == "default" and target in defaults
+                    or action == "link" and self.linked(*target)):
+                del self._pending[key]
         self.emit("changed")
+
+    def _once(self, action, target):
+        """False while the same action is still on its way, so a burst of updates sends it only once.
+
+        pw-cli and wpctl return before pw-dump reports the result, and every update
+        in between would otherwise repeat the action. Unanswered actions are retried
+        after two seconds.
+        """
+        now = time.monotonic()
+        if self._pending.get((action, target), 0) > now:
+            return False
+        self._pending[(action, target)] = now + 2
+        return True
 
     def _default(self, key):
         for oid, entries in self.metadata.items():
@@ -117,7 +141,10 @@ class PipeWire(GObject.Object):
         return ""
 
     def default(self, media_class):
-        return self._default("default.audio.sink" if media_class == "Audio/Sink" else "default.audio.source")
+        # The configured default is the user's choice. WirePlumber's effective default also
+        # wanders through each device as they reappear after a restart.
+        kind = "sink" if media_class == "Audio/Sink" else "source"
+        return self._default(f"default.configured.audio.{kind}")
 
     def nodes(self):
         for oid, obj in self.objects.items():
@@ -151,9 +178,21 @@ class PipeWire(GObject.Object):
                               int(props.get("priority.session", 0)), bool(props.get("node.virtual"))))
         return sorted(out, key=lambda d: (d.virtual, -d.priority, d.description.casefold()))
 
+    def linked(self, out_name, in_name):
+        out_id, in_id = self.node_id(out_name), self.node_id(in_name)
+        return any(obj.get("type") == "PipeWire:Interface:Link"
+                   and (obj.get("info") or {}).get("output-node-id") == out_id
+                   and (obj.get("info") or {}).get("input-node-id") == in_id
+                   for obj in self.objects.values())
+
+    def link(self, out_name, in_name):
+        """Links every port of one node to the next, passively, and keeps the links after pw-link exits."""
+        if self._once("link", (out_name, in_name)):
+            run(["pw-link", "--passive", "--linger", out_name, in_name])
+
     def set_default(self, name):
         oid = self.node_id(name)
-        if oid is not None:
+        if oid is not None and self._once("default", name):
             run(["wpctl", "set-default", str(oid)])
 
     def set_controls(self, name, controls):
@@ -166,6 +205,8 @@ class PipeWire(GObject.Object):
         run(["pw-cli", "set-param", str(oid), "Props", json.dumps({"params": params})])
 
     def create_virtual(self, name, description, media_class, positions):
+        if not self._once("create", name):
+            return
         props = {
             "factory.name": "support.null-audio-sink",
             "node.name": name,
@@ -181,5 +222,5 @@ class PipeWire(GObject.Object):
 
     def destroy(self, name):
         oid = self.node_id(name)
-        if oid is not None:
+        if oid is not None and self._once("destroy", oid):
             run(["pw-cli", "destroy", str(oid)])

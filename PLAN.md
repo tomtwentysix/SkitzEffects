@@ -30,7 +30,7 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
 
 ## Milestones
 
-### M1: Input, conflicts, renaming, packaging (in progress)
+### M1: Input, conflicts, renaming, packaging (done)
 1. **Input tab** (`ui/window.py`): `EffectsView(controller.input)` page; the presets button and
    effects switch bind to the visible pipeline and hide on Surround/Devices; the presets popover
    uses `presets.list_presets(direction)`. `ui/wizard.py`: input preset count, import both
@@ -39,7 +39,7 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
    Virtual Surround (from `Controller.conflicts`, button **Turn Off** → `Conflict.turn_off()`) →
    a stopped chain. Wizard says so when no conflicting app is running.
 3. **Device renaming** (`names.py`, `ui/devices.py`): Soundstage owns
-   `~/.config/wireplumber/wireplumber.conf.d/60-soundstage-device-names.conf`, holding node rules
+   `~/.config/wireplumber/wireplumber.conf.d/60-soundstage-devices.conf`, holding node rules
    (`node.name` → `node.description`/`node.nick`, the exact name in GNOME) plus card rules carried
    over from any rename files already in that folder, which are imported once and renamed to
    `.conf.disabled`. Rules sit under `monitor.alsa.rules`/`monitor.bluez.rules` by name prefix.
@@ -51,16 +51,34 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
    python3-gobject-base, gtk4, libadwaita, pipewire, pipewire-utils, wireplumber,
    pipewire-module-filter-chain-lv2, lsp-plugins-lv2, lv2-zam-plugins.
 
-### M2: Live hardening on real devices
-- Install the plugin packages and test on real devices: chain start, effects audible, live control
-  edits, device switching from GNOME, Bluetooth, PipeWire and WirePlumber restarts, chain crash
-  recovery.
-- Verify the assumptions the design rests on: two passive hops still wake the device when apps play,
-  and the mic stays closed when nothing records. Filter-chain should copy the stereo graph per
-  channel pair on surround passthrough, and Props updates should reach every copy. Sample-rate
-  changes must not break the HRIR convolver.
-- `tests/` with pytest for the pure parts: `choose_route`, preset → controls mapping, graph output,
-  SPA-JSON reader, preset loading in both formats.
+### M2: Live hardening on real devices (done)
+Tested on Fedora 44, PipeWire 1.6.10, WirePlumber 0.5.18, with the Dali IO6 (USB headphones),
+Midas UMC22 and the user's own presets.
+- Verified: both chains start and link, effects are audible and match Easy Effects, live control
+  edits apply without a restart, choosing an output in GNOME Settings switches Soundstage and loads
+  that device's preset, the HRIR places all 7.1 channels correctly (a 48 kHz HRIR on a 96 kHz
+  device is resampled by the convolver), and the chain recovers from a crash and from PipeWire and
+  WirePlumber restarts.
+- Passive links hold up: playing wakes the device through both passive hops and it suspends a few
+  seconds after playback stops; recording from `soundstage_source` opens the mic, and it closes
+  again afterwards. No non-passive fallback was needed.
+- 7.1 passthrough (measured on an 8-channel null sink, since the HDMI display only offers stereo):
+  filter-chain runs the 2-in graph once per channel pair, every channel is processed, and one Props
+  update changes all four copies.
+- Fixed: duplicate virtual devices and a `wpctl` storm (actions repeated while still in flight);
+  the input chain could never link (WirePlumber will not link a playback stream to a source, so the
+  controller links it with `pw-link --passive`); a chain process with no nodes left counted as
+  running; Popen and GLib both reaping the chain; Soundstage following WirePlumber's transient
+  defaults and vanishing devices during a WirePlumber restart (it now follows the configured
+  default and keeps the chosen device through a 5 second grace period); a stale object model
+  after a PipeWire restart.
+- Added: Bass Loudness through MDA (`lv2-mdala-plugins`, now required), with builtin gain nodes
+  for the preset's input and output gain. Device Settings replaces the rename dialog: name,
+  Disable Suspend (`session.suspend-timeout-seconds = 0`) and Sample Rate (`audio.rate`), which
+  replaces the user's keep-awake loopback and global `clock.force-rate`.
+- `tests/` (pytest): `choose_route`, preset → controls mapping from real presets, graph output,
+  the SPA-JSON reader and device rules, and preset loading in both Easy Effects formats.
+- Not tested: Bluetooth devices, and surround passthrough on physical 8-channel hardware.
 
 ### M3: Easy Effects parity
 - Presets: rename, delete, duplicate, import/export, Easy Effects community preset folders.
@@ -68,7 +86,8 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
 - Apps view: playing/recording apps with per-app exclude (Easy Effects' `blocklist` key).
 - Level meters and latency readout (source to be decided: LSP meter ports, or a lightweight
   `pw-record` peak reader).
-- More effects with packaged plugins: filter, delay, expander, multiband gate (LSP), and echo
+- More effects with packaged plugins: filter, delay, expander, multiband gate (LSP), the Calf
+  effects (`lv2-calf-plugins`: bass enhancer, exciter, stereo tools, reverb, deesser), and echo
   cancellation on input via PipeWire's own echo-cancel module.
 
 ### M4: Surround polish
@@ -81,15 +100,15 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
 - App icon (PNG sizes, symbolic), metainfo, screenshots, README, COPR repo like Superlion's.
 
 ### M6: Flatpak
-- Flatpak using the Flathub LinuxAudio extensions for Calf, MDA and bs2b, which enables Bass Enhancer,
-  Exciter, Bass Loudness and Crossfeed. Bundle filter-chain and lilv inside the sandbox.
+- Flatpak using the Flathub LinuxAudio extensions for LSP, ZAM, Calf, MDA and bs2b; bs2b also
+  enables Crossfeed, which Fedora cannot. Bundle filter-chain and lilv inside the sandbox.
 
 ## Risks and open questions
-- Passive-link behaviour and graph duplication (M2) are the biggest unknowns; if either fails,
-  the fallback is non-passive playback, at the cost of keeping devices awake.
 - Easy Effects 8 may change its preset keys (for example, IR paths); `plugins.py` mappings may need
   per-version aliases.
 - WirePlumber restart on rename is disruptive; there's no runtime API to change a node's description.
+- When Soundstage's sink comes back after a WirePlumber restart, apps play straight to the device for
+  a fraction of a second before WirePlumber restores the default.
 
 ## Verification for M1
 - `py_compile` everything. Build output and input configs from the real presets and run each

@@ -55,6 +55,8 @@ class Effect:
     ports: tuple = LSP_PORTS
     params: tuple = ()
     builtin: bool = False
+    # The plugin has no gain ports, so the graph puts builtin gain nodes around it.
+    gain_nodes: bool = False
     missing: str = ""
     custom: Callable | None = field(default=None, compare=False)
 
@@ -83,6 +85,8 @@ def lookup(data, key):
 def mapped_controls(params, data):
     out = {}
     for p in params:
+        if not p.port:
+            continue
         value = lookup(data, p.key)
         if value is None:
             continue
@@ -228,8 +232,6 @@ def multiband_params():
     return tuple(params)
 
 
-NOT_PACKAGED = "Fedora does not package the {} LV2 plugins this effect needs"
-
 EFFECTS = {
     e.kind: e
     for e in (
@@ -334,6 +336,18 @@ EFFECTS = {
             ),
         ),
         Effect(
+            "bass_loudness", "Bass Loudness", "http://drobilla.net/plugins/mda/Loudness", "mda.lv2",
+            "lv2-mdala-plugins", ports=("left_in", "right_in", "left_out", "right_out"), gain_nodes=True,
+            # Easy Effects stores these in dB; the plugin takes 0 to 1 linear.
+            params=(
+                Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
+                Param("output-gain", "", label="Output gain", lo=-36, hi=36, step=0.1, unit="dB"),
+                Param("loudness", "loudness", "db", label="Loudness", lo=-60, hi=0, step=0.1, unit="dB"),
+                Param("output", "output", "db", label="Output", lo=-60, hi=0, step=0.1, unit="dB"),
+                Param("link", "link", "db", label="Link", lo=-60, hi=0, step=0.1, unit="dB"),
+            ),
+        ),
+        Effect(
             "convolver", "Convolver", builtin=True, ports=(),
             params=(
                 Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
@@ -344,12 +358,11 @@ EFFECTS = {
 }
 
 for _kind, _title, _missing in (
-    ("bass_enhancer", "Bass Enhancer", NOT_PACKAGED.format("Calf")),
-    ("exciter", "Exciter", NOT_PACKAGED.format("Calf")),
-    ("stereo_tools", "Stereo Tools", NOT_PACKAGED.format("Calf")),
-    ("reverb", "Reverberation", NOT_PACKAGED.format("Calf")),
-    ("deesser", "Deesser", NOT_PACKAGED.format("Calf")),
-    ("bass_loudness", "Bass Loudness", NOT_PACKAGED.format("MDA")),
+    ("bass_enhancer", "Bass Enhancer", "Not supported yet"),
+    ("exciter", "Exciter", "Not supported yet"),
+    ("stereo_tools", "Stereo Tools", "Not supported yet"),
+    ("reverb", "Reverberation", "Not supported yet"),
+    ("deesser", "Deesser", "Not supported yet"),
     ("crossfeed", "Crossfeed", "Fedora packages no bs2b plugin for this effect"),
     ("crystalizer", "Crystalizer", "This effect is built into Easy Effects and has no plugin"),
     ("delay", "Delay", "Not supported yet"),

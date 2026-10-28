@@ -28,5 +28,6 @@ installs any that are missing.
 
 ## Effects not yet available
 
-Bass Enhancer, Exciter, Bass Loudness and Crossfeed need Calf, MDA and bs2b LV2
-plugins, which Fedora does not package. Their settings stay in the preset.
+Crossfeed needs the bs2b LV2 plugin, which Fedora does not package, and the Calf
+effects (Bass Enhancer, Exciter and others) are not mapped yet. Their settings stay
+in the preset.
