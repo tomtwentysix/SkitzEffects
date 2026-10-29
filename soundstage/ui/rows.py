@@ -6,6 +6,14 @@ from .. import plugins
 DISPLAY = {new: old for old, new in plugins.ALIASES.items()}
 
 
+def menu_row(label, checked):
+    """A compact list row for popovers: the label and, for the current choice, a check mark."""
+    box = Gtk.Box(spacing=12, margin_start=6, margin_end=6, margin_top=4, margin_bottom=4)
+    box.append(Gtk.Label(label=label, xalign=0, hexpand=True))
+    box.append(Gtk.Image(icon_name="object-select-symbolic", opacity=1 if checked else 0))
+    return Gtk.ListBoxRow(child=box)
+
+
 def full_names(row):
     """Shows a combo row's choices unshortened; the default list cuts long device names short."""
     bound = []

@@ -6,6 +6,7 @@ from .analyser import Spectrum
 from .devices import DevicesPage
 from .effects import EffectsView
 from .mixer import MixerPage
+from .rows import menu_row
 from .statusbar import StatusBar
 
 
@@ -142,7 +143,7 @@ class SoundstageWindow(Adw.ApplicationWindow):
         self.device_list = Gtk.ListBox(css_classes=["navigation-sidebar"], selection_mode=Gtk.SelectionMode.NONE)
         self.device_list.connect("row-activated", self._on_device_activated)
         scroller = Gtk.ScrolledWindow(child=self.device_list, propagate_natural_height=True, max_content_height=400,
-                                      hscrollbar_policy=Gtk.PolicyType.NEVER)
+                                      propagate_natural_width=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         popover = Gtk.Popover(child=scroller)
         popover.connect("show", lambda _p: self._fill_devices())
         return popover
@@ -150,10 +151,8 @@ class SoundstageWindow(Adw.ApplicationWindow):
     def _fill_devices(self):
         self.device_list.remove_all()
         for device in self.pipeline.devices():
-            row = Adw.ActionRow(title=self.pipeline.display_name(device), activatable=True)
+            row = menu_row(self.pipeline.display_name(device), device.name == self.pipeline.state["device"])
             row.device = device.name
-            if device.name == self.pipeline.state["device"]:
-                row.add_suffix(Gtk.Image(icon_name="object-select-symbolic"))
             self.device_list.append(row)
 
     def _on_device_activated(self, _list, row):

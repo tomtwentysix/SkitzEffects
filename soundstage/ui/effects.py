@@ -2,7 +2,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import plugins, presets
 from .eq import EqualizerEditor
-from .rows import full_names, param_row
+from .rows import full_names, menu_row, param_row
 
 ADDABLE = [e for e in plugins.EFFECTS.values() if not e.missing]
 
@@ -45,7 +45,7 @@ class EffectsView(Adw.Bin):
         self.preset_list = Gtk.ListBox(css_classes=["navigation-sidebar"], selection_mode=Gtk.SelectionMode.NONE)
         self.preset_list.connect("row-activated", self._on_preset_activated)
         scroller = Gtk.ScrolledWindow(child=self.preset_list, propagate_natural_height=True, max_content_height=360,
-                                      hscrollbar_policy=Gtk.PolicyType.NEVER)
+                                      propagate_natural_width=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
         self.new_name = Gtk.Entry(placeholder_text="New preset name", hexpand=True)
         self.new_name.connect("activate", self._on_new_preset)
         create = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="Create Preset")
@@ -64,10 +64,8 @@ class EffectsView(Adw.Bin):
         self.preset_list.remove_all()
         current = self.preset.name if self.preset else ""
         for name in presets.list_presets(self.pipeline.direction):
-            row = Adw.ActionRow(title=name, activatable=True)
+            row = menu_row(name, name == current)
             row.preset = name
-            if name == current:
-                row.add_suffix(Gtk.Image(icon_name="object-select-symbolic"))
             self.preset_list.append(row)
 
     def _on_preset_activated(self, _list, row):
