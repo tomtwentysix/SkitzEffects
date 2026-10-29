@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from soundstage import graph, plugins, presets
-from soundstage.config import LAYOUTS
+from skitz_effects import graph, plugins, presets
+from skitz_effects.config import LAYOUTS
 
 from .conftest import chain_args
 

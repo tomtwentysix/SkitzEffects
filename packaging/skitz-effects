@@ -1,0 +1,4 @@
+#!/bin/sh
+# Starts Skitz Effects from its installed location.
+export PYTHONPATH="/usr/share/skitz-effects${PYTHONPATH:+:$PYTHONPATH}"
+exec /usr/bin/python3 -m skitz_effects "$@"

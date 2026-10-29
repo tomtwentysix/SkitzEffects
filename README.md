@@ -1,13 +1,15 @@
-# Soundstage
+# Skitz Effects
 
 Audio effects for PipeWire, laid out like Easy Effects and using its presets, for
 both playback and microphones, with 5.1 and 7.1 input. Surround devices receive
 every channel; stereo devices get a binaural downmix through a 14-channel HeSuVi
 HRIR. Devices can be renamed system-wide from the Devices page.
 
-Soundstage does no audio processing of its own. PipeWire's filter-chain hosts the
+Skitz Effects does no audio processing of its own. PipeWire's filter-chain hosts the
 LSP and ZAM LV2 plugins that Easy Effects uses, and its convolver handles impulse
 responses and the HRIR.
+
+Skitz Effects is not affiliated with Easy Effects or its developers.
 
 ## Requirements
 

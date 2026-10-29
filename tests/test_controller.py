@@ -1,4 +1,4 @@
-from soundstage.controller import input_variants, routable
+from skitz_effects.controller import input_variants, routable
 
 UMC22 = [
     (0, "off"),
@@ -25,7 +25,7 @@ def test_input_variants_keep_the_output_side():
 
 def test_routable_streams():
     assert routable({"node.name": "Firefox"})
-    assert not routable({"node.name": "soundstage_tap_output_after"})
+    assert not routable({"node.name": "skitz_tap_output_after"})
     assert not routable({"node.name": "output.pw-loopback-1", "node.link-group": "loopback-1-20"})
     assert not routable({"node.name": "obs", "stream.capture.sink": "true"})
     assert not routable({"node.name": "peak", "stream.monitor": True})
@@ -33,7 +33,7 @@ def test_routable_streams():
 
 
 def test_app_key_matches_easy_effects_blocklist_names():
-    from soundstage.controller import app_key
+    from skitz_effects.controller import app_key
     assert app_key({"application.id": "org.gnome.Rhythmbox3", "application.name": "Rhythmbox"}) == "org.gnome.Rhythmbox3"
     assert app_key({"application.name": "Firefox", "node.name": "Firefox"}) == "Firefox"
     assert app_key({"node.name": "mpv"}) == "mpv"

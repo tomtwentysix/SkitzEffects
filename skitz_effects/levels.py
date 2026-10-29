@@ -64,7 +64,7 @@ class Tap:
         self.active = active
         # node.dont-fallback stops WirePlumber resolving a sink's monitor as a target, so it is only
         # set for sources, where it keeps a tap from recording the default mic instead.
-        props = f"{{ node.name = soundstage_tap_{name} node.passive = {str(not active).lower()} " \
+        props = f"{{ node.name = skitz_tap_{name} node.passive = {str(not active).lower()} " \
                 f"stream.capture.sink = {str(sink_monitor).lower()} node.dont-reconnect = true " \
                 f"node.dont-fallback = {str(not sink_monitor).lower()} }}"
         self.proc = subprocess.Popen(

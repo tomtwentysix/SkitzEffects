@@ -1,4 +1,4 @@
-"""Settings that belong to Soundstage itself; effect settings live in Easy Effects presets."""
+"""Settings that belong to Skitz Effects itself; effect settings live in Easy Effects presets."""
 
 import json
 import os
@@ -7,9 +7,9 @@ from pathlib import Path
 
 from gi.repository import GLib
 
-DEVEL = os.environ.get("SOUNDSTAGE_DEVEL") == "1"
-APP_NAME = "soundstage-devel" if DEVEL else "soundstage"
-ICON_NAME = "uk.co.solarflareit.Soundstage"
+DEVEL = os.environ.get("SKITZ_DEVEL") == "1"
+APP_NAME = "skitz-effects-devel" if DEVEL else "skitz-effects"
+ICON_NAME = "uk.co.solarflareit.SkitzEffects"
 APP_ID = ICON_NAME + (".Devel" if DEVEL else "")
 
 LAYOUTS = {
@@ -31,7 +31,7 @@ CONFIG_PATH = config_dir() / "config.json"
 
 
 def side():
-    # device_presets maps a device's node.name to the preset loaded when Soundstage switches to it;
+    # device_presets maps a device's node.name to the preset loaded when Skitz Effects switches to it;
     # device_channels maps an input to the one channel position it is recorded from.
     return {"enabled": True, "preset": "", "device": "", "device_presets": {}, "device_names": {},
             "device_channels": {}}

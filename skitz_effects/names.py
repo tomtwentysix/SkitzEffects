@@ -1,4 +1,4 @@
-"""Per-device settings kept as WirePlumber rules in a file Soundstage owns.
+"""Per-device settings kept as WirePlumber rules in a file Skitz Effects owns.
 
 Node rules rename one output or input exactly as GNOME shows it, keep it from
 suspending or pin its sample rate; card rules rename a whole sound card, and
@@ -14,13 +14,13 @@ from pathlib import Path
 from gi.repository import Gio, GLib
 
 CONF_DIR = Path(GLib.get_user_config_dir()) / "wireplumber" / "wireplumber.conf.d"
-OWN = CONF_DIR / "60-soundstage-devices.conf"
+OWN = CONF_DIR / "60-skitz-effects-devices.conf"
 MONITORS = {"alsa_": "monitor.alsa.rules", "bluez_": "monitor.bluez.rules"}
 MATCH = {"node": "node.name", "card": "device.name"}
 NAME_KEYS = {"node": ("node.description", "node.nick"), "card": ("device.description", "device.nick")}
 AWAKE = "session.suspend-timeout-seconds"
 RATE = "audio.rate"
-# The props Soundstage writes, by rule kind; files holding anything else are left alone.
+# The props Skitz Effects writes, by rule kind; files holding anything else are left alone.
 KNOWN = {"node": {*NAME_KEYS["node"], AWAKE, RATE}, "card": set(NAME_KEYS["card"])}
 
 TOKEN = re.compile(r'\s+|#[^\n]*|"(?:\\.|[^"\\])*"|[{}\[\]=:,]|[^\s{}\[\]=:,"#]+')
@@ -108,7 +108,7 @@ def rules():
 
 
 def custom():
-    """Names Soundstage has set, as {(kind, name): description}."""
+    """Names Skitz Effects has set, as {(kind, name): description}."""
     return {key: props[NAME_KEYS[key[0]][0]] for key, props in rules().items() if NAME_KEYS[key[0]][0] in props}
 
 
@@ -143,7 +143,7 @@ def write(all_rules):
     text = "\n".join(f"{section} = [\n" + "\n".join(entries) + "\n]\n" for section, entries in sections.items())
     CONF_DIR.mkdir(parents=True, exist_ok=True)
     tmp = OWN.with_suffix(".tmp")
-    tmp.write_text("# Written by Soundstage; change these from its Devices page.\n" + text)
+    tmp.write_text("# Written by Skitz Effects; change these from its Devices page.\n" + text)
     tmp.replace(OWN)
 
 

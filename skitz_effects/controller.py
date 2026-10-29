@@ -43,13 +43,13 @@ def truthy(value):
 
 
 def routable(props):
-    """Whether an app stream should go through Soundstage.
+    """Whether an app stream should go through Skitz Effects.
 
-    Left out: Soundstage's own streams, other filters and loopbacks (they have a
+    Left out: Skitz Effects' own streams, other filters and loopbacks (they have a
     link group), streams that capture a sink's monitor or only measure levels,
     and streams that name their own target.
     """
-    return not (props.get("node.name", "").startswith("soundstage_") or props.get("node.link-group")
+    return not (props.get("node.name", "").startswith("skitz_") or props.get("node.link-group")
                 or truthy(props.get("stream.capture.sink")) or truthy(props.get("stream.monitor"))
                 or props.get("target.object") or props.get("node.target"))
 
@@ -75,7 +75,7 @@ class Pipeline(GObject.Object):
         self.stream_class = "Stream/Output/Audio" if output else "Stream/Input/Audio"
         self.virtual = graph.SINK if output else graph.SOURCE
         self.virtual_class = "Audio/Sink" if output else "Audio/Source/Virtual"
-        self.virtual_description = "Soundstage" if output else "Soundstage Microphone"
+        self.virtual_description = "Skitz Effects" if output else "Skitz Effects Microphone"
         self.control_node = graph.CAPTURE if output else graph.MIC_CAPTURE
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.route = ""
@@ -155,10 +155,10 @@ class Pipeline(GObject.Object):
             if len(siblings) == 1:
                 self._migrate(self.state["device"], siblings[0])
         if any(d.name == default for d in devices):
-            # The default stays the real device, as GNOME shows it, and Soundstage plays through it.
+            # The default stays the real device, as GNOME shows it, and Skitz Effects plays through it.
             self.select_device(default)
         elif any(d.name == self.state["device"] for d in devices):
-            # Something else is the default, such as Soundstage's own node in older versions.
+            # Something else is the default, such as Skitz Effects' own node in older versions.
             pw.set_default(self.state["device"])
         elif not self.state["device"]:
             fallback = next((d for d in devices if not d.virtual), None)
@@ -177,7 +177,7 @@ class Pipeline(GObject.Object):
         self.queue_rebuild()
 
     def _route_streams(self):
-        """Sends app streams through Soundstage while its chain runs, and straight to the device otherwise.
+        """Sends app streams through Skitz Effects while its chain runs, and straight to the device otherwise.
 
         Streams moved elsewhere by the user, or that name their own target, are left alone.
         """
@@ -301,7 +301,7 @@ class Pipeline(GObject.Object):
             self._failures = 0
         elif self._failures < 3:
             self._failures += 1
-            print(f"soundstage: {self.direction} filter-chain lost its streams, restarting")
+            print(f"skitz-effects: {self.direction} filter-chain lost its streams, restarting")
             self._stop_chain()
             self.queue_rebuild()
         else:
@@ -315,7 +315,7 @@ class Pipeline(GObject.Object):
         if proc is self._proc:
             self._proc = None
             self._failures += 1
-            print(f"soundstage: {self.direction} filter-chain exited with status {status}")
+            print(f"skitz-effects: {self.direction} filter-chain exited with status {status}")
             self.emit("state-changed")
             self.queue_rebuild()
 

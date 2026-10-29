@@ -1,4 +1,4 @@
-"""What Soundstage needs installed, and the other audio apps it replaces."""
+"""What Skitz Effects needs installed, and the other audio apps it replaces."""
 
 import configparser
 import shutil
@@ -31,7 +31,7 @@ class Component:
 
 
 COMPONENTS = (
-    Component("PipeWire tools", "Lets Soundstage watch and control audio devices", "pipewire-utils",
+    Component("PipeWire tools", "Lets Skitz Effects watch and control audio devices", "pipewire-utils",
               commands=("pw-dump", "pw-cli")),
     Component("WirePlumber", "Chooses the default output device", "wireplumber", commands=("wpctl",)),
     Component("PipeWire plugin host", "Runs LV2 effect plugins inside PipeWire", "pipewire-module-filter-chain-lv2",
@@ -106,11 +106,11 @@ def _hidden(path):
 
 
 CONFLICTS = (
-    Conflict("Easy Effects", "Soundstage uses its presets, but both cannot process audio at once",
+    Conflict("Easy Effects", "Skitz Effects uses its presets, but both cannot process audio at once",
              flatpak="com.github.wwmm.easyeffects", process="easyeffects",
              autostart=("com.github.wwmm.easyeffects.desktop", "easyeffects-service.desktop"),
              nodes=("easyeffects_",)),
-    Conflict("Virtual Surround", "Soundstage does the surround downmixing itself",
+    Conflict("Virtual Surround", "Skitz Effects does the surround downmixing itself",
              flatpak="de.berny23.virtual_surround_manager",
              autostart=("de.berny23.virtual_surround_manager.desktop",),
              nodes=("effect_input.virtual-surround",)),
@@ -127,7 +127,7 @@ def running_conflicts(node_names):
     return [c for c in CONFLICTS if any(n.startswith(c.nodes) for n in node_names)]
 
 
-AUTOSTART = Path(GLib.get_user_config_dir()) / "autostart" / "uk.co.solarflareit.Soundstage.desktop"
+AUTOSTART = Path(GLib.get_user_config_dir()) / "autostart" / "uk.co.solarflareit.SkitzEffects.desktop"
 
 
 def set_autostart(on, command):
@@ -136,6 +136,6 @@ def set_autostart(on, command):
         return
     AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
     AUTOSTART.write_text(
-        "[Desktop Entry]\nType=Application\nName=Soundstage\nIcon=uk.co.solarflareit.Soundstage\n"
+        "[Desktop Entry]\nType=Application\nName=Skitz Effects\nIcon=uk.co.solarflareit.SkitzEffects\n"
         f"Exec={command} --background\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"
     )

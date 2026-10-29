@@ -1,22 +1,26 @@
 import sys
+from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, Gtk  # noqa: E402
 
-from . import config  # noqa: E402
+from . import config, migrate  # noqa: E402
 from .controller import Controller  # noqa: E402
 
 VERSION = "0.1.0"
 DEVELOPER = "SolarFlare Developments"
 
 
-class SoundstageApplication(Adw.Application):
+class SkitzEffectsApplication(Adw.Application):
     def __init__(self):
         super().__init__(application_id=config.APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        from .ui.wizard import autostart_command
+
+        migrate.from_soundstage(autostart_command())
         self.settings = config.load()
         self.controller = Controller(self.settings)
         self._held = False
@@ -41,6 +45,12 @@ class SoundstageApplication(Adw.Application):
             self.activate()
         return 0
 
+    def do_startup(self):
+        Adw.Application.do_startup(self)
+        icons = Path(__file__).parent.parent / "data" / "icons"
+        if icons.is_dir():
+            Gtk.IconTheme.get_for_display(Gdk.Display.get_default()).add_search_path(str(icons))
+
     def do_activate(self):
         window = self.window()
         window.present()
@@ -48,10 +58,10 @@ class SoundstageApplication(Adw.Application):
             window.run_setup(first_run=True)
 
     def window(self):
-        from .ui.window import SoundstageWindow
+        from .ui.window import SkitzEffectsWindow
 
         if self.props.active_window is None:
-            SoundstageWindow(application=self)
+            SkitzEffectsWindow(application=self)
         return self.props.active_window
 
     def hold_in_background(self):
@@ -72,7 +82,7 @@ class SoundstageApplication(Adw.Application):
 
     def _on_about(self, *_):
         about = Adw.AboutDialog(
-            application_name="Soundstage",
+            application_name="Skitz Effects",
             application_icon=config.ICON_NAME,
             developer_name=DEVELOPER,
             version=VERSION,
@@ -84,4 +94,4 @@ class SoundstageApplication(Adw.Application):
 
 
 def main():
-    return SoundstageApplication().run(sys.argv)
+    return SkitzEffectsApplication().run(sys.argv)

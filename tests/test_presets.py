@@ -1,6 +1,6 @@
 import json
 
-from soundstage import presets
+from skitz_effects import presets
 
 from .conftest import write_wav
 
@@ -71,7 +71,7 @@ def test_irs_and_wav_channels(ee_root, tmp_path):
 
 
 def test_device_positions_from_props():
-    from soundstage.pipewire import _positions
+    from skitz_effects.pipewire import _positions
     assert _positions({"props": {"audio.position": "[ MONO ]"}}) == ("MONO",)
     assert _positions({"props": {"audio.position": "FL,FR"}}) == ("FL", "FR")
     assert _positions({"props": {}, "params": {"Format": [{"position": ["FL", "FR"]}]}}) == ("FL", "FR")
@@ -79,7 +79,7 @@ def test_device_positions_from_props():
 
 def test_levels_rise_at_once_and_fall_steadily():
     import numpy as np
-    from soundstage import levels
+    from skitz_effects import levels
     shown = np.array([-60.0, -10.0])
     out = levels.smooth(shown, np.array([-20.0, -90.0]), 0.5)
     assert out[0] == -20.0

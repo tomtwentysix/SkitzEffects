@@ -16,12 +16,12 @@ from pathlib import Path
 from . import plugins, presets
 from .config import LAYOUTS
 
-SINK = "soundstage_sink"
-CAPTURE = "soundstage_effects"
-PLAYBACK = "soundstage_output"
-SOURCE = "soundstage_source"
-MIC_CAPTURE = "soundstage_mic"
-MIC_PLAYBACK = "soundstage_mic_output"
+SINK = "skitz_sink"
+CAPTURE = "skitz_effects"
+PLAYBACK = "skitz_output"
+SOURCE = "skitz_source"
+MIC_CAPTURE = "skitz_mic"
+MIC_PLAYBACK = "skitz_mic_output"
 
 # Channel indices in a HeSuVi 14-channel HRIR, as (left ear, right ear).
 HESUVI = {"FL": (0, 1), "SL": (2, 3), "RL": (4, 5), "FC": (6, 13), "FR": (8, 7), "SR": (10, 9), "RR": (12, 11)}
@@ -206,7 +206,7 @@ def build(preset, enabled, route, layout, hrir, target):
     capture = LAYOUTS[layout] if route in ("passthrough", "hrir") else LAYOUTS["stereo"]
     playback = LAYOUTS[layout] if route == "passthrough" else LAYOUTS["stereo"]
     return config_text(
-        "Soundstage Effects", graph, inputs, outputs,
+        "Skitz Effects Output", graph, inputs, outputs,
         {"node.name": CAPTURE, "target.object": SINK, "stream.capture.sink": True, **channels(capture)},
         {"node.name": PLAYBACK, "target.object": target, **channels(playback)},
     )
@@ -227,7 +227,7 @@ def build_input(preset, enabled, device, channel="", positions=()):
         capture = stereo
     outputs = stereo_chain(graph, preset, enabled, left, right)
     return config_text(
-        "Soundstage Microphone Effects", graph, inputs, outputs,
+        "Skitz Effects Microphone", graph, inputs, outputs,
         {"node.name": MIC_CAPTURE, "target.object": device, **capture},
         # WirePlumber only links playback streams to sinks, so the controller links this one to the source.
         {"node.name": MIC_PLAYBACK, "node.autoconnect": False, **stereo},

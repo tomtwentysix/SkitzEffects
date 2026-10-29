@@ -1,4 +1,0 @@
-#!/bin/sh
-# Starts Soundstage from its installed location.
-export PYTHONPATH="/usr/share/soundstage${PYTHONPATH:+:$PYTHONPATH}"
-exec /usr/bin/python3 -m soundstage "$@"

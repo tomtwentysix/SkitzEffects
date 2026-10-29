@@ -1,11 +1,11 @@
-# Soundstage plan
+# Skitz Effects plan
 
 **Goal:** to the user it looks and works like Easy Effects, uses Easy Effects presets, and adds
 5.1/7.1 input that is passed through to surround devices or downmixed through an HRIR on stereo
 devices, all from one GNOME-native window.
 
 **Principles**
-- Soundstage is a manager and has no DSP of its own. PipeWire's filter-chain hosts the LV2
+- Skitz Effects is a manager and has no DSP of its own. PipeWire's filter-chain hosts the LV2
   plugins Easy Effects uses (LSP, ZAM) and its convolver does IRs and HRIRs. WirePlumber
   handles routing, defaults and names.
 - Easy Effects presets are edited in place, so both apps keep working with the same files.
@@ -15,14 +15,14 @@ devices, all from one GNOME-native window.
 ## Architecture
 
 ```
-apps ─► soundstage_sink (lingering null sink, 2/6/8 ch)
+apps ─► skitz_sink (lingering null sink, 2/6/8 ch)
           └─ monitor ─► [output filter-chain: HRIR downmix? → effects] ─► hardware sink
-mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Audio/Source/Virtual) ─► apps
+mic ─► [input filter-chain: effects] ─► skitz_source (lingering Audio/Source/Virtual) ─► apps
 ```
 - `pipewire.py`: live model from `pw-dump --monitor`; actions via `wpctl`/`pw-cli`.
 - `controller.py`: `Controller` (PipeWire, conflicts, devices) owns two `Pipeline`s (output,
   input). Each plays through or records from the default device, which stays the real device as
-  in Easy Effects, moves app streams onto Soundstage's nodes with `target.object` metadata while
+  in Easy Effects, moves app streams onto Skitz Effects' nodes with `target.object` metadata while
   its chain runs (and back if it stops), loads per-device presets, and
   restarts its `pipewire -c` child on structural changes or live-updates controls via Props.
 - `graph.py`: filter-chain configs; `choose_route()` picks passthrough / HRIR / plain downmix.
@@ -40,8 +40,8 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
 2. **Conflict banner**: `_update_banner()` priority is missing packages → running Easy Effects or
    Virtual Surround (from `Controller.conflicts`, button **Turn Off** → `Conflict.turn_off()`) →
    a stopped chain. Wizard says so when no conflicting app is running.
-3. **Device renaming** (`names.py`, `ui/devices.py`): Soundstage owns
-   `~/.config/wireplumber/wireplumber.conf.d/60-soundstage-devices.conf`, holding node rules
+3. **Device renaming** (`names.py`, `ui/devices.py`): Skitz Effects owns
+   `~/.config/wireplumber/wireplumber.conf.d/60-skitz-effects-devices.conf`, holding node rules
    (`node.name` → `node.description`/`node.nick`, the exact name in GNOME) plus card rules carried
    over from any rename files already in that folder, which are imported once and renamed to
    `.conf.disabled`. Rules sit under `monitor.alsa.rules`/`monitor.bluez.rules` by name prefix.
@@ -49,7 +49,7 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
    Applying a rename restarts WirePlumber (the dialog warns that audio pauses briefly) and then
    `Controller.restart_chains()` rebuilds both chains, because their links drop with WirePlumber.
    Each device row gets an edit button → `Adw.AlertDialog` with **Rename** and **Reset Name**.
-4. **RPM** (`packaging/soundstage.spec`, launcher), modelled on Superlion: `Requires:`
+4. **RPM** (`packaging/skitz-effects.spec`, launcher), modelled on Superlion: `Requires:`
    python3-gobject-base, gtk4, libadwaita, pipewire, pipewire-utils, wireplumber,
    pipewire-module-filter-chain-lv2, lsp-plugins-lv2, lv2-zam-plugins.
 
@@ -57,12 +57,12 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
 Tested on Fedora 44, PipeWire 1.6.10, WirePlumber 0.5.18, with the Dali IO6 (USB headphones),
 Midas UMC22 and the user's own presets.
 - Verified: both chains start and link, effects are audible and match Easy Effects, live control
-  edits apply without a restart, choosing an output in GNOME Settings switches Soundstage and loads
+  edits apply without a restart, choosing an output in GNOME Settings switches Skitz Effects and loads
   that device's preset, the HRIR places all 7.1 channels correctly (a 48 kHz HRIR on a 96 kHz
   device is resampled by the convolver), and the chain recovers from a crash and from PipeWire and
   WirePlumber restarts.
 - Passive links hold up: playing wakes the device through both passive hops and it suspends a few
-  seconds after playback stops; recording from `soundstage_source` opens the mic, and it closes
+  seconds after playback stops; recording from `skitz_source` opens the mic, and it closes
   again afterwards. No non-passive fallback was needed.
 - 7.1 passthrough (measured on an 8-channel null sink, since the HDMI display only offers stereo):
   filter-chain runs the 2-in graph once per channel pair, every channel is processed, and one Props
@@ -70,7 +70,7 @@ Midas UMC22 and the user's own presets.
 - Fixed: duplicate virtual devices and a `wpctl` storm (actions repeated while still in flight);
   the input chain could never link (WirePlumber will not link a playback stream to a source, so the
   controller links it with `pw-link --passive`); a chain process with no nodes left counted as
-  running; Popen and GLib both reaping the chain; Soundstage following WirePlumber's transient
+  running; Popen and GLib both reaping the chain; Skitz Effects following WirePlumber's transient
   defaults and vanishing devices during a WirePlumber restart (it now follows the configured
   default and keeps the chosen device through a 5 second grace period); a stale object model
   after a PipeWire restart.
@@ -81,7 +81,7 @@ Midas UMC22 and the user's own presets.
 - `tests/` (pytest): `choose_route`, preset → controls mapping from real presets, graph output,
   the SPA-JSON reader and device rules, and preset loading in both Easy Effects formats.
 - Not tested: Bluetooth devices, and surround passthrough on physical 8-channel hardware.
-- Afterwards, at the user's request, Soundstage stopped taking the default device: GNOME now shows
+- Afterwards, at the user's request, Skitz Effects stopped taking the default device: GNOME now shows
   the real device and app streams are moved instead. Switching from GNOME and quitting were
   re-tested; PipeWire and WirePlumber restarts were not re-run after this change.
 - Inputs can record one chosen channel to both sides (Device Settings → Channel).
@@ -92,18 +92,18 @@ Midas UMC22 and the user's own presets.
 - Done: Mixer page (Easy Effects' Players and Recorders): each app's volume and mute, and a switch
   that leaves it out of the effects through the preset's `blocklist` key.
 - Done: before/after spectrum at the top of the Output and Input pages (curves or bars), a status
-  bar with output and mic peak meters and Output/Mic Pre-Gain sliders (`soundstage_sink` and the
+  bar with output and mic peak meters and Output/Mic Pre-Gain sliders (`skitz_sink` and the
   mic's own volume), and a graphical parametric EQ. Levels come from `pw-record` taps in
   `levels.py`; they are passive, so metering never wakes a device or opens the mic, except that
   the Input page opens the mic while it is shown.
 - Latency readout.
 - Deep Noise Remover (DeepFilterNet's LADSPA plugin) on input. Fedora does not package it, so
   `packaging/deepfilternet/` holds a spec for the SolarFlare COPR and a workflow that follows
-  upstream releases; Soundstage `Recommends:` it.
+  upstream releases; Skitz Effects `Recommends:` it.
 - Done: Devices page redesign. Sections are In Use, Surround (moved here from its own page),
   Outputs and Inputs; each device opens a settings window (name, preset, channel, Disable Suspend,
   sample rate). Inputs are picked by device and named after the card; Channel picks the card's
-  input profile (stereo, input 1, input 2, mono mix), and Soundstage follows the renamed node.
+  input profile (stereo, input 1, input 2, mono mix), and Skitz Effects follows the renamed node.
 - Done: the header's menu picks the device for the page shown; presets moved to the top of the
   effects sidebar.
 - More effects with packaged plugins: filter, delay, expander, multiband gate (LSP), the Calf
@@ -114,7 +114,7 @@ Midas UMC22 and the user's own presets.
 - Per-device downmix override: USB headsets that report 7.1 can be set to always use the HRIR,
   while the global setting stays the default.
 - Speaker test: play a tone on each channel through the chain.
-- HRIR library management: import WAVs into Soundstage's IR folder and show the channel count.
+- HRIR library management: import WAVs into Skitz Effects' IR folder and show the channel count.
 
 ### M5: Release
 - App icon (PNG sizes, symbolic), metainfo, screenshots, README, COPR repo like Superlion's.
@@ -127,7 +127,7 @@ Midas UMC22 and the user's own presets.
 - Easy Effects 8 may change its preset keys (for example, IR paths); `plugins.py` mappings may need
   per-version aliases.
 - WirePlumber restart on rename is disruptive; there's no runtime API to change a node's description.
-- When Soundstage's sink comes back after a WirePlumber restart, apps play straight to the device for
+- When Skitz Effects' sink comes back after a WirePlumber restart, apps play straight to the device for
   a fraction of a second before WirePlumber restores the default.
 
 ## Verification for M1

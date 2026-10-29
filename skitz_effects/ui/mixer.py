@@ -17,7 +17,7 @@ class AppRow(Adw.ActionRow):
         self.add_prefix(self.icon)
         self.volume = VolumeControl(controller, lambda: oid, "", "Volume of this app", ICONS[pipeline.direction])
         self.add_suffix(self.volume)
-        self.effects = Gtk.Switch(valign=Gtk.Align.CENTER, tooltip_text="Apply Soundstage's effects to this app")
+        self.effects = Gtk.Switch(valign=Gtk.Align.CENTER, tooltip_text="Apply effects to this app")
         self.effects.connect("notify::active", self._on_effects)
         self.add_suffix(self.effects)
         self.update(props)
@@ -39,7 +39,7 @@ class AppRow(Adw.ActionRow):
 
 
 class MixerPage(Adw.PreferencesPage):
-    """Apps playing and recording, with their volume and whether Soundstage's effects apply to them."""
+    """Apps playing and recording, with their volume and whether effects apply to them."""
 
     def __init__(self, controller):
         super().__init__(title="Mixer", icon_name="audio-volume-high-symbolic")

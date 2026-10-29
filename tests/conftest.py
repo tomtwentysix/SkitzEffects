@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from soundstage import plugins, presets
+from skitz_effects import plugins, presets
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

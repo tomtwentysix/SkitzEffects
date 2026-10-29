@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from gi.repository import Gio, GLib, GObject
 
-OWN_PREFIX = "soundstage_"
+OWN_PREFIX = "skitz_"
 
 
 @dataclass
@@ -55,7 +55,7 @@ def run(argv):
     try:
         Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
     except GLib.Error as e:
-        print(f"soundstage: {argv[0]}: {e.message}")
+        print(f"skitz-effects: {argv[0]}: {e.message}")
 
 
 class PipeWire(GObject.Object):
@@ -212,7 +212,7 @@ class PipeWire(GObject.Object):
         return [info.get("props", {}).get("node.name", "") for _oid, info in self.nodes()]
 
     def devices(self, media_class, exclude=()):
-        """Best first; leaves out Soundstage's own nodes and any whose name starts with one in exclude."""
+        """Best first; leaves out Skitz Effects' own nodes and any whose name starts with one in exclude."""
         out = []
         for oid, info in self.nodes():
             props = info.get("props", {})

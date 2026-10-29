@@ -10,9 +10,9 @@ from .rows import menu_row
 from .statusbar import StatusBar
 
 
-class SoundstageWindow(Adw.ApplicationWindow):
+class SkitzEffectsWindow(Adw.ApplicationWindow):
     def __init__(self, application):
-        super().__init__(application=application, title="Soundstage", default_width=1000, default_height=700)
+        super().__init__(application=application, title="Skitz Effects", default_width=1000, default_height=700)
         self.controller = application.controller
         self.pipeline = self.controller.output
         self._binding = False
@@ -35,7 +35,7 @@ class SoundstageWindow(Adw.ApplicationWindow):
 
         menu = Gio.Menu()
         menu.append("Run Setup Again", "app.setup")
-        menu.append("About Soundstage", "app.about")
+        menu.append("About Skitz Effects", "app.about")
         menu.append("Quit", "app.quit")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, primary=True,
                                        tooltip_text="Main Menu"))
@@ -60,7 +60,7 @@ class SoundstageWindow(Adw.ApplicationWindow):
 
         breakpoint = Adw.Breakpoint.new(Adw.BreakpointCondition.parse("max-width: 600sp"))
         breakpoint.add_setter(bar, "reveal", True)
-        breakpoint.add_setter(header, "title-widget", Adw.WindowTitle(title="Soundstage"))
+        breakpoint.add_setter(header, "title-widget", Adw.WindowTitle(title="Skitz Effects"))
         self.add_breakpoint(breakpoint)
 
         for pipeline in self.controller.pipelines:
@@ -127,7 +127,7 @@ class SoundstageWindow(Adw.ApplicationWindow):
         elif conflicts:
             names = " and ".join(c.title for c in conflicts)
             verb = "are" if len(conflicts) > 1 else "is"
-            self._show_banner(f"{names} {verb} running and will fight Soundstage over your audio", "Turn Off",
+            self._show_banner(f"{names} {verb} running and will fight Skitz Effects over your audio", "Turn Off",
                               lambda: self._turn_off(conflicts))
         elif stopped:
             self._show_banner("The effects stopped unexpectedly", "Restart", self.controller.restart_chains)

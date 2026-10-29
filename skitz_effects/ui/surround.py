@@ -33,7 +33,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         settings = controller.settings
         self.route_row = Adw.ActionRow(title="Route")
         self.add(self.route_row)
-        self.layout_row = Adw.ComboRow(title="Channels", subtitle="Apps see Soundstage as a speaker with this many",
+        self.layout_row = Adw.ComboRow(title="Channels", subtitle="Apps see Skitz Effects as a speaker with this many",
                                        model=Gtk.StringList.new([t for _k, t in LAYOUTS]))
         self.layout_row.set_selected([k for k, _t in LAYOUTS].index(settings.layout))
         self.layout_row.connect("notify::selected", self._on_layout)

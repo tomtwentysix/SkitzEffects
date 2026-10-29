@@ -1,6 +1,6 @@
 import pytest
 
-from soundstage import names
+from skitz_effects import names
 
 from .conftest import FIXTURES
 
@@ -10,7 +10,7 @@ DALI = "alsa_output.usb-0a12_DALI_IO_100306010587-00.analog-stereo"
 @pytest.fixture
 def conf_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(names, "CONF_DIR", tmp_path)
-    monkeypatch.setattr(names, "OWN", tmp_path / "60-soundstage-devices.conf")
+    monkeypatch.setattr(names, "OWN", tmp_path / "60-skitz-effects-devices.conf")
     return tmp_path
 
 

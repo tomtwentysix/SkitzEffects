@@ -1,6 +1,6 @@
 import pytest
 
-from soundstage import graph, plugins, presets
+from skitz_effects import graph, plugins, presets
 
 
 def test_equalizer_from_the_dali_preset(ee_root):

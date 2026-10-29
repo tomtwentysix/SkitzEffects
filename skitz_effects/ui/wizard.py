@@ -9,12 +9,12 @@ from .surround import LAYOUTS, hrir_choices
 def autostart_command():
     if config.DEVEL:
         return str(Path(__file__).resolve().parents[2] / "run-dev.sh")
-    return "soundstage"
+    return "skitz-effects"
 
 
 class SetupWizard(Adw.Dialog):
     def __init__(self, application, first_run):
-        super().__init__(title="Set Up Soundstage", content_width=560, content_height=640,
+        super().__init__(title="Set Up Skitz Effects", content_width=560, content_height=640,
                          can_close=not first_run)
         self.app = application
         self.settings = application.settings
@@ -51,8 +51,8 @@ class SetupWizard(Adw.Dialog):
 
     def _welcome(self):
         return Adw.StatusPage(
-            icon_name=config.ICON_NAME, title="Welcome to Soundstage",
-            description="Soundstage applies your Easy Effects presets to everything you play, "
+            icon_name=config.ICON_NAME, title="Welcome to Skitz Effects",
+            description="Skitz Effects applies your Easy Effects presets to everything you play, "
                         "switches presets when you change device, and plays 5.1 and 7.1 sound on any "
                         "speakers or headphones.")
 
@@ -114,7 +114,7 @@ class SetupWizard(Adw.Dialog):
         outputs, inputs = len(presets.list_presets("output")), len(presets.list_presets("input"))
         found.add(Adw.ActionRow(
             title=f"{outputs} output and {inputs} input presets found",
-            subtitle="Soundstage edits them in place, so Easy Effects keeps working with them"))
+            subtitle="Skitz Effects edits them in place, so Easy Effects keeps working with them"))
         self.rules = {d: presets.autoload_rules(d) for d in ("output", "input")}
         count = sum(len(r) for r in self.rules.values())
         self.import_rules = Adw.SwitchRow(
@@ -125,7 +125,7 @@ class SetupWizard(Adw.Dialog):
         page.add(found)
 
         group = Adw.PreferencesGroup(
-            title="Apps Soundstage Replaces",
+            title="Apps Skitz Effects Replaces",
             description="Turning these off stops them now and at login. You can turn them back on in "
                         "their own settings.")
         conflicts = deps.active_conflicts()
@@ -149,7 +149,7 @@ class SetupWizard(Adw.Dialog):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(
             title="Surround Sound",
-            description="Apps can send Soundstage up to 7.1 channels. Surround devices get every channel; on "
+            description="Apps can send Skitz Effects up to 7.1 channels. Surround devices get every channel; on "
                         "stereo devices an HRIR places each one around you.")
         self.layout_row = Adw.ComboRow(title="Channels", model=Gtk.StringList.new([t for _k, t in LAYOUTS]))
         self.layout_row.set_selected([k for k, _t in LAYOUTS].index(self.settings.layout))
@@ -173,7 +173,7 @@ class SetupWizard(Adw.Dialog):
         self.autostart_row = Adw.SwitchRow(title="Start at login", active=True)
         self.background_row = Adw.SwitchRow(
             title="Keep running when the window is closed",
-            subtitle="Effects only apply while Soundstage is running", active=self.settings.run_in_background)
+            subtitle="Effects only apply while Skitz Effects is running", active=self.settings.run_in_background)
         group.add(self.autostart_row)
         group.add(self.background_row)
         page.add(group)

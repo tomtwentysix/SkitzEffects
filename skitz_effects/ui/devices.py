@@ -116,7 +116,7 @@ class DevicesPage(Adw.PreferencesPage):
 
 
 class DeviceSettings(Adw.Dialog):
-    """Everything Soundstage keeps for one device; hardware changes apply after WirePlumber restarts."""
+    """Everything Skitz Effects keeps for one device; hardware changes apply after WirePlumber restarts."""
 
     def __init__(self, page, pipeline, name, description):
         super().__init__(title=description, content_width=520)
@@ -150,7 +150,7 @@ class DeviceSettings(Adw.Dialog):
             self.entry.add_suffix(reset)
             general.add(self.entry)
         self.choices = [KEEP, *presets.list_presets(pipeline.direction)]
-        self.preset = Adw.ComboRow(title="Preset", subtitle="Loaded when Soundstage switches to this device",
+        self.preset = Adw.ComboRow(title="Preset", subtitle="Loaded when Skitz Effects switches to this device",
                                    model=Gtk.StringList.new(self.choices), enable_search=True)
         current = pipeline.state["device_presets"].get(name, KEEP)
         if current in self.choices:
