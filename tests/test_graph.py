@@ -152,3 +152,37 @@ def test_live_controls_match_the_built_graph(ee_root, lv2):
         name, port = key.split(":")
         assert nodes[name]["control"][port] == value
     assert graph.live_controls("convolver#0", plugins.effect("convolver"), {}) is None
+
+
+def test_noise_remover_runs_as_ladspa(ee_root, lv2):
+    preset = presets.create("Mic", "input")
+    effect_id = preset.add("deepfilternet")
+    preset.settings(effect_id)["attenuation-limit"] = 40.0
+    args = chain_args(graph.build_input(preset, True, "alsa_input.mic"))
+    nodes = {n["name"]: n for n in args["filter.graph"]["nodes"]}
+    node = nodes["deepfilternet_0"]
+    assert (node["type"], node["plugin"], node["label"]) == ("ladspa", "libdeep_filter_ladspa", "deep_filter_stereo")
+    assert node["control"]["Attenuation Limit (dB)"] == 40.0
+    assert {"deepfilternet_0_in_l", "deepfilternet_0_out_r"} <= set(nodes)
+    assert {"output": "deepfilternet_0_in_l:Out", "input": "deepfilternet_0:Audio In L"} in args["filter.graph"]["links"]
+    assert args["filter.graph"]["outputs"] == ["deepfilternet_0_out_l:Out", "deepfilternet_0_out_r:Out"]
+    assert_wired(args)
+
+
+def test_input_channel_feeds_both_sides(ee_root, lv2):
+    args = chain_args(graph.build_input(None, True, "alsa_input.mic", "FR", ("FL", "FR")))
+    g = args["filter.graph"]
+    assert g["inputs"] == [None, "in_l:In"]
+    assert g["outputs"] == ["in_l:Out", "in_l:Out"]
+    assert args["capture.props"]["audio.position"] == ["FL", "FR"]
+    # A channel the device does not have falls back to recording every channel.
+    fallback = chain_args(graph.build_input(None, True, "alsa_input.mic", "AUX3", ("MONO",)))
+    assert fallback["filter.graph"]["inputs"] == ["in_l:In", "in_r:In"]
+    assert fallback["capture.props"]["audio.position"] == list(LAYOUTS["stereo"])
+
+
+def test_mono_profile_records_only_its_mono_channel(ee_root, lv2):
+    args = chain_args(graph.build_input(None, True, "alsa_input.umc22.analog-mono-left", "MONO", ("MONO", "AUX1")))
+    assert args["filter.graph"]["inputs"] == ["in_l:In", None]
+    assert args["filter.graph"]["outputs"] == ["in_l:Out", "in_l:Out"]
+    assert args["capture.props"]["audio.position"] == ["MONO", "AUX1"]

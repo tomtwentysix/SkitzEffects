@@ -26,7 +26,11 @@ def lv2(tmp_path, monkeypatch):
     lib = tmp_path / "lv2"
     for bundle in ("lsp-plugins.lv2", "ZaMaximX2.lv2", "mda.lv2"):
         (lib / bundle).mkdir(parents=True)
+    ladspa = tmp_path / "ladspa"
+    ladspa.mkdir()
+    (ladspa / "libdeep_filter_ladspa.so").touch()
     monkeypatch.setattr(plugins, "LV2_DIRS", [lib])
+    monkeypatch.setattr(plugins, "LADSPA_DIRS", [ladspa])
     return lib
 
 

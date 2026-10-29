@@ -3,6 +3,7 @@ from pathlib import Path
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import presets
+from .rows import full_names
 
 LAYOUTS = (("stereo", "Stereo"), ("5.1", "5.1 Surround"), ("7.1", "7.1 Surround"))
 DOWNMIX = (("auto", "When the device needs it"), ("always", "Always"), ("never", "Never"))
@@ -21,44 +22,34 @@ def hrir_choices(current=""):
     return found
 
 
-class SurroundPage(Adw.PreferencesPage):
+class SurroundGroup(Adw.PreferencesGroup):
+    """The surround channels apps play into, and how they reach the output device."""
+
     def __init__(self, controller):
-        super().__init__(title="Surround", icon_name="audio-speakers-symbolic")
+        super().__init__(title="Surround", description="An HRIR places each surround channel around you on "
+                                                       "headphones or stereo speakers. Use a 14-channel HeSuVi WAV "
+                                                       "file.")
         self.controller = controller
         settings = controller.settings
-
-        status = Adw.PreferencesGroup(title="Now Playing")
-        self.device_row = Adw.ActionRow(title="Output device", subtitle_selectable=True)
         self.route_row = Adw.ActionRow(title="Route")
-        status.add(self.device_row)
-        status.add(self.route_row)
-        self.add(status)
-
-        source = Adw.PreferencesGroup(
-            title="Input", description="Apps see Soundstage as a speaker with this many channels")
-        self.layout_row = Adw.ComboRow(title="Channels", model=Gtk.StringList.new([t for _k, t in LAYOUTS]))
+        self.add(self.route_row)
+        self.layout_row = Adw.ComboRow(title="Channels", subtitle="Apps see Soundstage as a speaker with this many",
+                                       model=Gtk.StringList.new([t for _k, t in LAYOUTS]))
         self.layout_row.set_selected([k for k, _t in LAYOUTS].index(settings.layout))
         self.layout_row.connect("notify::selected", self._on_layout)
-        source.add(self.layout_row)
-        self.add(source)
-
-        downmix = Adw.PreferencesGroup(
-            title="Downmixing",
-            description="An HRIR places each surround channel around you on headphones or stereo speakers. "
-                        "Use a 14-channel HeSuVi WAV file.")
+        self.add(self.layout_row)
         self.mode_row = Adw.ComboRow(title="Use the HRIR", model=Gtk.StringList.new([t for _k, t in DOWNMIX]))
         self.mode_row.set_selected([k for k, _t in DOWNMIX].index(settings.downmix))
         self.mode_row.connect("notify::selected", self._on_mode)
-        downmix.add(self.mode_row)
-        self.hrir_row = Adw.ComboRow(title="HRIR")
+        self.add(self.mode_row)
+        self.hrir_row = full_names(Adw.ComboRow(title="HRIR"))
         choose = Gtk.Button(icon_name="document-open-symbolic", tooltip_text="Choose File",
                             valign=Gtk.Align.CENTER, css_classes=["flat"])
         choose.connect("clicked", self._on_choose)
         self.hrir_row.add_suffix(choose)
         self._fill_hrirs()
         self.hrir_row.connect("notify::selected", self._on_hrir)
-        downmix.add(self.hrir_row)
-        self.add(downmix)
+        self.add(self.hrir_row)
 
         controller.output.connect("state-changed", lambda *_: self.refresh())
         controller.connect("devices-changed", lambda *_: self.refresh())
@@ -76,11 +67,9 @@ class SurroundPage(Adw.PreferencesPage):
 
     def refresh(self):
         sink = self.controller.output.device
-        if sink:
-            self.device_row.set_subtitle(f"{sink.description} · {sink.channels} channels")
-        else:
-            self.device_row.set_subtitle("No output device")
         route = ROUTES.get(self.controller.output.route, "Not running")
+        if sink:
+            route = f"{route} ({sink.channels} channels)"
         settings = self.controller.settings
         if self.controller.output.route == "stereo" and not self.controller.hrir_ok() and settings.downmix != "never":
             route += " (choose an HRIR to place the surround channels)"

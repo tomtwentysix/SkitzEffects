@@ -8,13 +8,50 @@ import time
 
 from gi.repository import GLib, GObject
 
-from . import config, deps, graph, plugins, presets
+from . import config, deps, graph, names, plugins, presets
 from .config import LAYOUTS
 from .pipewire import PipeWire
 
 PR_SET_PDEATHSIG = 1
 # Seconds a chosen device may be gone before another one stands in for it.
 MISSING_GRACE = 5
+
+
+def input_variants(profiles, current):
+    """The card profiles that keep the current output side and differ only in their input.
+
+    profiles is [(index, name)] with names such as
+    "output:analog-stereo-output+input:analog-mono"; returns [(index, input part)].
+    """
+    keep = "+".join(part for part in current.split("+") if not part.startswith("input:"))
+    out = []
+    for index, name in profiles:
+        parts = name.split("+")
+        inputs = [part[len("input:"):] for part in parts if part.startswith("input:")]
+        if inputs and "+".join(part for part in parts if not part.startswith("input:")) == keep:
+            out.append((index, inputs[0]))
+    return out
+
+
+def app_key(props):
+    """How Easy Effects names an app in a preset's blocklist."""
+    return props.get("application.id") or props.get("application.name") or props.get("node.name", "")
+
+
+def truthy(value):
+    return value is True or str(value).lower() == "true"
+
+
+def routable(props):
+    """Whether an app stream should go through Soundstage.
+
+    Left out: Soundstage's own streams, other filters and loopbacks (they have a
+    link group), streams that capture a sink's monitor or only measure levels,
+    and streams that name their own target.
+    """
+    return not (props.get("node.name", "").startswith("soundstage_") or props.get("node.link-group")
+                or truthy(props.get("stream.capture.sink")) or truthy(props.get("stream.monitor"))
+                or props.get("target.object") or props.get("node.target"))
 
 
 def _die_with_parent():
@@ -35,6 +72,7 @@ class Pipeline(GObject.Object):
         self.direction = direction
         output = direction == "output"
         self.media_class = "Audio/Sink" if output else "Audio/Source"
+        self.stream_class = "Stream/Output/Audio" if output else "Stream/Input/Audio"
         self.virtual = graph.SINK if output else graph.SOURCE
         self.virtual_class = "Audio/Sink" if output else "Audio/Source/Virtual"
         self.virtual_description = "Soundstage" if output else "Soundstage Microphone"
@@ -73,6 +111,28 @@ class Pipeline(GObject.Object):
             return chosen
         return next((d for d in devices if not d.virtual), None)
 
+    def display_name(self, device):
+        """Inputs show the card's name, since what they record is a setting of the device."""
+        custom = names.custom().get(("node", device.name))
+        if self.direction == "input" and device.card and not custom:
+            return device.card
+        return device.description
+
+    def switch_profile(self, device, index):
+        """Moves a card to another profile; sync() then follows its renamed node."""
+        self.pw.set_profile(device.card_id, index)
+
+    def _migrate(self, old, new):
+        state = self.state
+        for key in ("device_presets", "device_names", "device_channels"):
+            if old in state[key]:
+                state[key][new] = state[key].pop(old)
+        state["device_channels"].pop(new, None)
+        if state["device"] == old:
+            state["device"] = new
+        self.controller.settings.save()
+        self.emit("state-changed")
+
     def positions(self):
         return LAYOUTS[self.controller.settings.layout] if self.direction == "output" else LAYOUTS["stereo"]
 
@@ -88,11 +148,18 @@ class Pipeline(GObject.Object):
             return
         default = pw.default(self.media_class)
         devices = self.devices()
-        if default and default != self.virtual and any(d.name == default for d in devices):
-            # The user picked a device elsewhere (GNOME Settings, the volume menu):
-            # use it and take the default back.
+        if self.state["device"] and not any(d.name == self.state["device"] for d in devices):
+            # A card's nodes are named after its profile, so a new profile renames the chosen device.
+            base = self.state["device"].rsplit(".", 1)[0] + "."
+            siblings = [d.name for d in devices if d.name.startswith(base)]
+            if len(siblings) == 1:
+                self._migrate(self.state["device"], siblings[0])
+        if any(d.name == default for d in devices):
+            # The default stays the real device, as GNOME shows it, and Soundstage plays through it.
             self.select_device(default)
-            pw.set_default(self.virtual)
+        elif any(d.name == self.state["device"] for d in devices):
+            # Something else is the default, such as Soundstage's own node in older versions.
+            pw.set_default(self.state["device"])
         elif not self.state["device"]:
             fallback = next((d for d in devices if not d.virtual), None)
             if fallback:
@@ -106,15 +173,45 @@ class Pipeline(GObject.Object):
             if not pw.linked(graph.MIC_PLAYBACK, self.virtual):
                 pw.link(graph.MIC_PLAYBACK, self.virtual)
         self._check_chain()
+        self._route_streams()
         self.queue_rebuild()
 
+    def _route_streams(self):
+        """Sends app streams through Soundstage while its chain runs, and straight to the device otherwise.
+
+        Streams moved elsewhere by the user, or that name their own target, are left alone.
+        """
+        pw = self.pw
+        for oid, props in pw.streams(self.stream_class):
+            target = self.virtual if self.chain_running and not self.blocked(props) else ""
+            if routable(props) and pw.stream_target(oid) in ("", self.virtual) and pw.stream_target(oid) != target:
+                pw.move(oid, target)
+
+    def blocked(self, props):
+        """Apps left out of the effects, kept in the preset's blocklist as Easy Effects does."""
+        return bool(self.preset) and app_key(props) in self.preset.section.get("blocklist", [])
+
+    def set_blocked(self, props, on):
+        if self.preset is None:
+            return
+        blocklist = self.preset.section.setdefault("blocklist", [])
+        key = app_key(props)
+        if on and key not in blocklist:
+            blocklist.append(key)
+        elif not on and key in blocklist:
+            blocklist.remove(key)
+        self._queue_save()
+        self._route_streams()
+
     def select_device(self, name):
+        if self.pw and self.pw.default(self.media_class) != name:
+            self.pw.set_default(name)
         if name == self.state["device"]:
             return
         self.state["device"] = name
         device = next((d for d in self.devices() if d.name == name), None)
         if device:
-            self.state["device_names"][name] = device.description
+            self.state["device_names"][name] = self.display_name(device)
         rule = self.state["device_presets"].get(name)
         if rule and rule in presets.list_presets(self.direction):
             self.load_preset(rule)
@@ -182,7 +279,12 @@ class Pipeline(GObject.Object):
     def _build(self, device):
         enabled = self.state["enabled"]
         if self.direction == "input":
-            return "stereo", graph.build_input(self.preset, enabled, device.name)
+            channel = self.state["device_channels"].get(device.name, "")
+            if not channel and "MONO" in device.positions and len(device.positions) > 1:
+                # ALSA's left and right mono profiles keep the unused input as AUX1, which would
+                # otherwise reach the effects' right side.
+                channel = "MONO"
+            return "stereo", graph.build_input(self.preset, enabled, device.name, channel, device.positions)
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
         return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name)
@@ -253,8 +355,7 @@ class Pipeline(GObject.Object):
     def shutdown(self):
         self._flush_save()
         self._stop_chain()
-        if self.state["device"]:
-            self.pw.set_default(self.state["device"])
+        self._route_streams()
         self.pw.destroy(self.virtual)
 
     def _queue_save(self):

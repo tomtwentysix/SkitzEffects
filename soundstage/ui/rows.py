@@ -6,6 +6,39 @@ from .. import plugins
 DISPLAY = {new: old for old, new in plugins.ALIASES.items()}
 
 
+def full_names(row):
+    """Shows a combo row's choices unshortened; the default list cuts long device names short."""
+    bound = []
+
+    def setup(_factory, item):
+        box = Gtk.Box(spacing=12)
+        box.append(Gtk.Label(xalign=0, hexpand=True))
+        box.append(Gtk.Image(icon_name="object-select-symbolic"))
+        item.set_child(box)
+
+    def bind(_factory, item):
+        label, check = item.get_child().get_first_child(), item.get_child().get_last_child()
+        label.set_label(item.get_item().get_string())
+        check.set_opacity(1 if item.get_position() == row.get_selected() else 0)
+        bound.append(item)
+
+    def unbind(_factory, item):
+        if item in bound:
+            bound.remove(item)
+
+    def selected(*_):
+        for item in bound:
+            item.get_child().get_last_child().set_opacity(1 if item.get_position() == row.get_selected() else 0)
+
+    factory = Gtk.SignalListItemFactory()
+    factory.connect("setup", setup)
+    factory.connect("bind", bind)
+    factory.connect("unbind", unbind)
+    row.set_list_factory(factory)
+    row.connect("notify::selected", selected)
+    return row
+
+
 def set_path(settings, key, value):
     *parents, last = key.split("/")
     for part in parents:

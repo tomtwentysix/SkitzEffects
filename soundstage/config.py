@@ -31,8 +31,10 @@ CONFIG_PATH = config_dir() / "config.json"
 
 
 def side():
-    # device_presets maps a device's node.name to the preset loaded when Soundstage switches to it.
-    return {"enabled": True, "preset": "", "device": "", "device_presets": {}, "device_names": {}}
+    # device_presets maps a device's node.name to the preset loaded when Soundstage switches to it;
+    # device_channels maps an input to the one channel position it is recorded from.
+    return {"enabled": True, "preset": "", "device": "", "device_presets": {}, "device_names": {},
+            "device_channels": {}}
 
 
 @dataclass
@@ -45,6 +47,8 @@ class Settings:
     downmix: str = "auto"
     hrir: str = ""
     run_in_background: bool = True
+    # "curves" or "bars".
+    analyser: str = "curves"
 
     def save(self):
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)

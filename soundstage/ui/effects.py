@@ -1,30 +1,17 @@
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import plugins, presets
-from .rows import param_row, set_path, spin_button
+from .eq import EqualizerEditor
+from .rows import full_names, param_row
 
-EQ_GAIN = plugins.Param("gain", "", label="Gain", lo=-36, hi=36, step=0.1, unit="dB")
-EQ_BAND = (
-    plugins.Param("type", "", "enum", plugins.EQ_TYPES, "Type"),
-    plugins.Param("mode", "", "enum", plugins.EQ_MODES, "Mode"),
-    plugins.Param("slope", "", "enum", plugins.EQ_SLOPES, "Slope"),
-    plugins.Param("frequency", "", label="Frequency", lo=10, hi=24000, step=1, digits=0, unit="Hz"),
-    plugins.Param("q", "", label="Quality", lo=0, hi=100, step=0.01, digits=2),
-    plugins.Param("width", "", label="Width", lo=0, hi=12, step=0.1, unit="octaves"),
-    plugins.Param("mute", "", "bool", label="Mute"),
-    plugins.Param("solo", "", "bool", label="Solo"),
-)
 ADDABLE = [e for e in plugins.EFFECTS.values() if not e.missing]
 
 
-def frequency_label(hz):
-    return f"{hz / 1000:g} kHz" if hz >= 1000 else f"{hz:g} Hz"
-
-
 class EffectsView(Adw.Bin):
-    def __init__(self, pipeline):
+    def __init__(self, pipeline, meters=None):
         super().__init__()
         self.pipeline = pipeline
+        self.meters = meters
         self.selected = None
 
         self.list = Gtk.ListBox(css_classes=["navigation-sidebar"])
@@ -32,6 +19,11 @@ class EffectsView(Adw.Bin):
         add = Gtk.MenuButton(css_classes=["flat"], halign=Gtk.Align.CENTER, popover=self._add_popover())
         add.set_child(Adw.ButtonContent(icon_name="list-add-symbolic", label="Add Effect"))
         sidebar = Adw.ToolbarView(content=Gtk.ScrolledWindow(child=self.list, vexpand=True))
+        self.preset_button = Gtk.MenuButton(always_show_arrow=True, hexpand=True, tooltip_text="Preset",
+                                            popover=self._presets_popover())
+        top = Gtk.Box(margin_start=6, margin_end=6, margin_top=6, margin_bottom=6)
+        top.append(self.preset_button)
+        sidebar.add_top_bar(top)
         bottom = Gtk.ActionBar()
         bottom.set_center_widget(add)
         sidebar.add_bottom_bar(bottom)
@@ -48,6 +40,50 @@ class EffectsView(Adw.Bin):
     @property
     def preset(self):
         return self.pipeline.preset
+
+    def _presets_popover(self):
+        self.preset_list = Gtk.ListBox(css_classes=["navigation-sidebar"], selection_mode=Gtk.SelectionMode.NONE)
+        self.preset_list.connect("row-activated", self._on_preset_activated)
+        scroller = Gtk.ScrolledWindow(child=self.preset_list, propagate_natural_height=True, max_content_height=360,
+                                      hscrollbar_policy=Gtk.PolicyType.NEVER)
+        self.new_name = Gtk.Entry(placeholder_text="New preset name", hexpand=True)
+        self.new_name.connect("activate", self._on_new_preset)
+        create = Gtk.Button(icon_name="list-add-symbolic", tooltip_text="Create Preset")
+        create.connect("clicked", self._on_new_preset)
+        new_box = Gtk.Box(spacing=6, css_classes=["linked"])
+        new_box.append(self.new_name)
+        new_box.append(create)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, width_request=280)
+        box.append(scroller)
+        box.append(new_box)
+        popover = Gtk.Popover(child=box)
+        popover.connect("show", lambda _p: self._fill_presets())
+        return popover
+
+    def _fill_presets(self):
+        self.preset_list.remove_all()
+        current = self.preset.name if self.preset else ""
+        for name in presets.list_presets(self.pipeline.direction):
+            row = Adw.ActionRow(title=name, activatable=True)
+            row.preset = name
+            if name == current:
+                row.add_suffix(Gtk.Image(icon_name="object-select-symbolic"))
+            self.preset_list.append(row)
+
+    def _on_preset_activated(self, _list, row):
+        self.preset_button.popdown()
+        self.pipeline.load_preset(row.preset)
+
+    def _on_new_preset(self, *_):
+        name = self.new_name.get_text().strip()
+        if not name or "/" in name:
+            return
+        if name in presets.list_presets(self.pipeline.direction):
+            self.get_root().toast(f"A preset called {name} already exists")
+            return
+        self.new_name.set_text("")
+        self.preset_button.popdown()
+        self.pipeline.new_preset(name)
 
     def _add_popover(self):
         menu = Gio.Menu()
@@ -69,12 +105,13 @@ class EffectsView(Adw.Bin):
 
     def reload(self, select=None):
         self.list.remove_all()
+        self.preset_button.set_label(self.preset.name if self.preset else "Choose a Preset")
         if self.preset is None:
             output = self.pipeline.direction == "output"
             icon = "audio-speakers-symbolic" if output else "audio-input-microphone-symbolic"
             self.content.set_content(Adw.StatusPage(
                 icon_name=icon, title="No Preset Loaded",
-                description="Choose a preset from the menu above, or create a new one"))
+                description="Choose a preset or create one with the button above the effects list"))
             return
         target = None
         for effect_id in self.preset.order:
@@ -156,6 +193,10 @@ class EffectsView(Adw.Bin):
 
         if effect.kind == "convolver":
             page.add(self._convolver_group(settings, on_change))
+        if effect.kind == "equalizer":
+            response = Adw.PreferencesGroup()
+            response.add(EqualizerEditor(settings, on_change, self.meters))
+            page.add(response)
         group = Adw.PreferencesGroup()
         for param in effect.shown():
             group.add(param_row(param, settings, (lambda: on_change(True)) if effect.kind == "convolver"
@@ -170,8 +211,8 @@ class EffectsView(Adw.Bin):
         irs = presets.list_irs()
         names = ["None", *irs]
         current = settings.get("kernel-name", "")
-        row = Adw.ComboRow(title="Impulse response", model=Gtk.StringList.new(names),
-                           enable_search=True)
+        row = full_names(Adw.ComboRow(title="Impulse response", model=Gtk.StringList.new(names),
+                                      enable_search=True))
         if current in irs:
             row.set_selected(names.index(current))
 
@@ -192,30 +233,3 @@ class EffectsView(Adw.Bin):
         split = plugins.Param("split-channels", "", "bool", label="Separate left and right")
         bands.add(param_row(split, settings, lambda: (on_change(), self._show(self.selected))))
         page.add(bands)
-        sides = ("left", "right") if settings.get("split-channels") else ("left",)
-        for side in sides:
-            group = Adw.PreferencesGroup(title={"left": "Left", "right": "Right"}[side] if len(sides) > 1 else "")
-            for i in range(int(settings.get("num-bands", 10))):
-                group.add(self._band_row(settings, side, i, on_change))
-            page.add(group)
-
-    def _band_row(self, settings, side, i, on_change):
-        band = settings.setdefault(side, {}).setdefault(f"band{i}", dict(presets.DEFAULTS["equalizer"]["left"].get(
-            f"band{i}", {"frequency": 1000.0, "gain": 0.0, "type": "Bell", "q": 1.5})))
-        row = Adw.ExpanderRow(title=frequency_label(band.get("frequency", 1000)),
-                              subtitle=band.get("type", "Bell"))
-
-        def gain_changed(value):
-            set_path(band, "gain", value)
-            on_change()
-
-        row.add_suffix(spin_button(EQ_GAIN, band.get("gain", 0.0), gain_changed))
-
-        def band_changed():
-            row.set_title(frequency_label(band.get("frequency", 1000)))
-            row.set_subtitle(band.get("type", "Bell"))
-            on_change()
-
-        for param in EQ_BAND:
-            row.add_row(param_row(param, band, band_changed))
-        return row

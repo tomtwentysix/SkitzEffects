@@ -11,6 +11,7 @@ BuildRequires:  desktop-file-utils
 
 Requires:       python3
 Requires:       python3-gobject-base
+Requires:       python3-numpy
 Requires:       gtk4
 Requires:       libadwaita
 Requires:       pipewire
@@ -20,6 +21,7 @@ Requires:       pipewire-module-filter-chain-lv2
 Requires:       lsp-plugins-lv2
 Requires:       lv2-zam-plugins
 Requires:       lv2-mdala-plugins
+Recommends:     ladspa-deepfilternet
 
 %description
 Soundstage applies Easy Effects presets to everything you play and record,

@@ -112,7 +112,10 @@ def add_effect(graph, effect_id, effect, settings, left, right):
     in_l, in_r, out_l, out_r = effect.ports
     if effect.gain_nodes:
         left, right = gain_stage(graph, f"{name}_in", settings.get("input-gain", 0), left, right)
-    graph.add(type="lv2", plugin=effect.uri, name=name, control=effect.controls(settings))
+    if effect.ladspa:
+        graph.add(type="ladspa", plugin=effect.ladspa, label=effect.uri, name=name, control=effect.controls(settings))
+    else:
+        graph.add(type="lv2", plugin=effect.uri, name=name, control=effect.controls(settings))
     graph.link(left, f"{name}:{in_l}")
     graph.link(right, f"{name}:{in_r}")
     left, right = f"{name}:{out_l}", f"{name}:{out_r}"
@@ -209,14 +212,23 @@ def build(preset, enabled, route, layout, hrir, target):
     )
 
 
-def build_input(preset, enabled, device):
+def build_input(preset, enabled, device, channel="", positions=()):
+    """The mic chain; with a channel, only that one of the device's positions feeds both sides."""
     graph = Graph()
-    inputs, left, right = plain_inputs(graph)
-    outputs = stereo_chain(graph, preset, enabled, left, right)
     stereo = channels(LAYOUTS["stereo"])
+    if channel in positions:
+        source = graph.copy("in_l")
+        # A null input discards that channel of the capture.
+        inputs = [f"{source}:In" if position == channel else None for position in positions]
+        left = right = f"{source}:Out"
+        capture = channels(positions)
+    else:
+        inputs, left, right = plain_inputs(graph)
+        capture = stereo
+    outputs = stereo_chain(graph, preset, enabled, left, right)
     return config_text(
         "Soundstage Microphone Effects", graph, inputs, outputs,
-        {"node.name": MIC_CAPTURE, "target.object": device, **stereo},
+        {"node.name": MIC_CAPTURE, "target.object": device, **capture},
         # WirePlumber only links playback streams to sinks, so the controller links this one to the source.
         {"node.name": MIC_PLAYBACK, "node.autoconnect": False, **stereo},
     )

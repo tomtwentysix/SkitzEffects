@@ -17,6 +17,10 @@ class Device:
     channels: int
     priority: int
     virtual: bool
+    positions: tuple = ()
+    # The sound card's own name, such as "Midas UMC22", and its PipeWire id.
+    card: str = ""
+    card_id: int | None = None
 
 
 def _channels(info):
@@ -35,6 +39,18 @@ def _channels(info):
     return best or 2
 
 
+def _positions(info):
+    """A device's channel positions, such as ("FL", "FR") or ("MONO",)."""
+    position = info.get("props", {}).get("audio.position")
+    if isinstance(position, str):
+        # Props carry it as text, such as "FL,FR" or "[ MONO ]".
+        position = position.strip("[] ").replace(",", " ").split()
+    if not position:
+        for fmt in info.get("params", {}).get("Format") or []:
+            position = fmt.get("position")
+    return tuple(position or ())
+
+
 def run(argv):
     try:
         Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
@@ -48,6 +64,8 @@ class PipeWire(GObject.Object):
     def __init__(self):
         super().__init__()
         self.ready = False
+        self._controls = {}
+        self._controls_id = 0
         self._proc = None
         self._start()
 
@@ -92,16 +110,18 @@ class PipeWire(GObject.Object):
 
     def _apply(self, batch):
         # Removals arrive as {"id": n, "info": null}; metadata objects carry their
-        # props at the top level and list only the keys that changed.
+        # props at the top level and list only the entries that changed, each one
+        # keyed by the object it is about (its subject) as well as its key.
         for obj in batch:
             oid = obj["id"]
             if obj.get("metadata"):
                 entries = self.metadata.setdefault(oid, {})
                 for m in obj["metadata"]:
+                    key = (m.get("subject", 0), m["key"])
                     if m.get("value") is None:
-                        entries.pop(m["key"], None)
+                        entries.pop(key, None)
                     else:
-                        entries[m["key"]] = m["value"]
+                        entries[key] = m["value"]
             if "type" in obj:
                 self.objects[oid] = obj
             elif obj.get("info", obj.get("metadata", 0)) is None:
@@ -116,7 +136,8 @@ class PipeWire(GObject.Object):
             if (action == "create" and self.node_id(target) is not None
                     or action == "destroy" and target not in self.objects
                     or action == "default" and target in defaults
-                    or action == "link" and self.linked(*target)):
+                    or action == "link" and self.linked(*target)
+                    or action == "move" and self.stream_target(target[0]) == target[1]):
                 del self._pending[key]
         self.emit("changed")
 
@@ -133,12 +154,36 @@ class PipeWire(GObject.Object):
         self._pending[(action, target)] = now + 2
         return True
 
-    def _default(self, key):
+    def _default_metadata(self):
         for oid, entries in self.metadata.items():
             if self.objects.get(oid, {}).get("props", {}).get("metadata.name") == "default":
-                value = entries.get(key)
-                return value.get("name", "") if isinstance(value, dict) else ""
-        return ""
+                return entries
+        return {}
+
+    def _default(self, key):
+        value = self._default_metadata().get((0, key))
+        return value.get("name", "") if isinstance(value, dict) else ""
+
+    def stream_target(self, oid):
+        """Where a stream has been sent with target.object metadata, or ""."""
+        value = self._default_metadata().get((oid, "target.object"))
+        return value if isinstance(value, str) else ""
+
+    def move(self, oid, target):
+        """Sends one stream to a node, or with an empty target back to the default."""
+        if not self._once("move", (oid, target)):
+            return
+        if target:
+            run(["pw-metadata", str(oid), "target.object", target, "Spa:String"])
+        else:
+            run(["pw-metadata", "-d", str(oid), "target.object"])
+
+    def streams(self, media_class):
+        """App streams of one class ("Stream/Output/Audio" or "Stream/Input/Audio") as (id, props)."""
+        for oid, info in self.nodes():
+            props = info.get("props", {})
+            if props.get("media.class") == media_class:
+                yield oid, props
 
     def default(self, media_class):
         # The configured default is the user's choice. WirePlumber's effective default also
@@ -174,8 +219,11 @@ class PipeWire(GObject.Object):
             name = props.get("node.name", "")
             if props.get("media.class") != media_class or name.startswith((OWN_PREFIX, *exclude)):
                 continue
+            card_id = props.get("device.id")
+            card = ((self.objects.get(card_id) or {}).get("info") or {}).get("props", {})
             out.append(Device(oid, name, props.get("node.description") or name, _channels(info),
-                              int(props.get("priority.session", 0)), bool(props.get("node.virtual"))))
+                              int(props.get("priority.session", 0)), bool(props.get("node.virtual")),
+                              _positions(info), card.get("device.description", ""), card_id))
         return sorted(out, key=lambda d: (d.virtual, -d.priority, d.description.casefold()))
 
     def linked(self, out_name, in_name):
@@ -190,19 +238,63 @@ class PipeWire(GObject.Object):
         if self._once("link", (out_name, in_name)):
             run(["pw-link", "--passive", "--linger", out_name, in_name])
 
+    def profiles(self, card_id):
+        """A card's profiles as [(index, name)], and the name of the one in use."""
+        params = ((self.objects.get(card_id) or {}).get("info") or {}).get("params", {})
+        listed = [(p["index"], p["name"]) for p in params.get("EnumProfile") or [] if p.get("available") != "no"]
+        current = next((p.get("name", "") for p in params.get("Profile") or []), "")
+        return listed, current
+
+    def set_profile(self, card_id, index):
+        run(["wpctl", "set-profile", str(card_id), str(index)])
+
     def set_default(self, name):
         oid = self.node_id(name)
         if oid is not None and self._once("default", name):
             run(["wpctl", "set-default", str(oid)])
 
     def set_controls(self, name, controls):
-        oid = self.node_id(name)
-        if oid is None or not controls:
+        """Queues control updates; a drag sends one pw-cli call per frame rather than per motion event."""
+        if not controls:
             return
-        params = []
-        for key, value in controls.items():
-            params += [key, value]
-        run(["pw-cli", "set-param", str(oid), "Props", json.dumps({"params": params})])
+        self._controls.setdefault(name, {}).update(controls)
+        if not self._controls_id:
+            self._controls_id = GLib.timeout_add(30, self._send_controls)
+
+    def _send_controls(self):
+        self._controls_id = 0
+        queued, self._controls = self._controls, {}
+        for name, controls in queued.items():
+            oid = self.node_id(name)
+            if oid is None:
+                continue
+            params = []
+            for key, value in controls.items():
+                params += [key, value]
+            run(["pw-cli", "set-param", str(oid), "Props", json.dumps({"params": params})])
+        return False
+
+    def _oid(self, node):
+        return node if isinstance(node, int) else self.node_id(node)
+
+    def volume(self, node):
+        """A node's volume (by name or id) on wpctl's cubic scale, 1.0 being unity, and whether it is muted."""
+        oid = self._oid(node)
+        for props in ((self.objects.get(oid) or {}).get("info") or {}).get("params", {}).get("Props") or []:
+            if "channelVolumes" in props:
+                levels = props["channelVolumes"] or [1.0]
+                return max(levels) ** (1 / 3), bool(props.get("mute"))
+        return None, False
+
+    def set_volume(self, node, volume):
+        oid = self._oid(node)
+        if oid is not None:
+            run(["wpctl", "set-volume", str(oid), f"{max(volume, 0.0):.3f}"])
+
+    def set_mute(self, node, mute):
+        oid = self._oid(node)
+        if oid is not None:
+            run(["wpctl", "set-mute", str(oid), "1" if mute else "0"])
 
     def create_virtual(self, name, description, media_class, positions):
         if not self._once("create", name):

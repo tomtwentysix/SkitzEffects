@@ -68,3 +68,20 @@ def test_irs_and_wav_channels(ee_root, tmp_path):
     assert presets.wav_channels(hrir) == 14
     assert presets.wav_channels(ee_root / "irs" / "notes.txt") == 0
     assert presets.wav_channels(tmp_path / "missing.wav") == 0
+
+
+def test_device_positions_from_props():
+    from soundstage.pipewire import _positions
+    assert _positions({"props": {"audio.position": "[ MONO ]"}}) == ("MONO",)
+    assert _positions({"props": {"audio.position": "FL,FR"}}) == ("FL", "FR")
+    assert _positions({"props": {}, "params": {"Format": [{"position": ["FL", "FR"]}]}}) == ("FL", "FR")
+
+
+def test_levels_rise_at_once_and_fall_steadily():
+    import numpy as np
+    from soundstage import levels
+    shown = np.array([-60.0, -10.0])
+    out = levels.smooth(shown, np.array([-20.0, -90.0]), 0.5)
+    assert out[0] == -20.0
+    assert out[1] == -10.0 - levels.RELEASE * 0.5
+    assert levels.smooth(np.array([-89.0]), np.array([-90.0]), 10)[0] == levels.FLOOR

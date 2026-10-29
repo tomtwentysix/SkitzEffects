@@ -16,6 +16,11 @@ LV2_DIRS = [Path(p) for p in os.environ.get("LV2_PATH", "").split(":") if p] + [
     Path("/usr/lib/lv2"),
     Path("/usr/local/lib/lv2"),
 ]
+LADSPA_DIRS = [Path(p) for p in os.environ.get("LADSPA_PATH", "").split(":") if p] + [
+    Path("/usr/lib64/ladspa"),
+    Path("/usr/lib/ladspa"),
+    Path("/usr/local/lib/ladspa"),
+]
 
 LSP = "http://lsp-plug.in/plugins/lv2/"
 LSP_PORTS = ("in_l", "in_r", "out_l", "out_r")
@@ -55,6 +60,8 @@ class Effect:
     ports: tuple = LSP_PORTS
     params: tuple = ()
     builtin: bool = False
+    # A LADSPA library such as "libdeep_filter_ladspa"; uri is then the plugin's label.
+    ladspa: str = ""
     # The plugin has no gain ports, so the graph puts builtin gain nodes around it.
     gain_nodes: bool = False
     missing: str = ""
@@ -63,6 +70,8 @@ class Effect:
     def available(self):
         if self.builtin:
             return True
+        if self.ladspa:
+            return any((d / f"{self.ladspa}.so").is_file() for d in LADSPA_DIRS)
         return bool(self.bundle) and any((d / self.bundle).is_dir() for d in LV2_DIRS)
 
     def controls(self, data):
@@ -348,6 +357,27 @@ EFFECTS = {
             ),
         ),
         Effect(
+            "deepfilternet", "Deep Noise Remover", "deep_filter_stereo", package="ladspa-deepfilternet",
+            ladspa="libdeep_filter_ladspa", gain_nodes=True,
+            ports=("Audio In L", "Audio In R", "Audio Out L", "Audio Out R"),
+            params=(
+                Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
+                Param("output-gain", "", label="Output gain", lo=-36, hi=36, step=0.1, unit="dB"),
+                Param("attenuation-limit", "Attenuation Limit (dB)", label="Attenuation limit", hi=100,
+                      unit="dB", digits=0),
+                Param("min-processing-threshold", "Min processing threshold (dB)",
+                      label="Minimum processing threshold", lo=-15, hi=35, unit="dB", digits=0),
+                Param("max-erb-processing-threshold", "Max ERB processing threshold (dB)",
+                      label="Maximum ERB processing threshold", lo=-15, hi=35, unit="dB", digits=0),
+                Param("max-df-processing-threshold", "Max DF processing threshold (dB)",
+                      label="Maximum DF processing threshold", lo=-15, hi=35, unit="dB", digits=0),
+                Param("min-processing-buffer", "Min Processing Buffer (frames)", label="Minimum processing buffer",
+                      hi=10, unit="frames", digits=0),
+                Param("post-filter-beta", "Post Filter Beta", label="Post filter beta", hi=0.05, step=0.001,
+                      digits=3),
+            ),
+        ),
+        Effect(
             "convolver", "Convolver", builtin=True, ports=(),
             params=(
                 Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
@@ -372,7 +402,6 @@ for _kind, _title, _missing in (
     ("pitch", "Pitch", "Not supported yet"),
     ("level_meter", "Level Meter", "Not supported yet"),
     ("rnnoise", "Noise Reduction", "Not supported yet"),
-    ("deepfilternet", "Deep Noise Remover", "Not supported yet"),
     ("speex", "Speech Processor", "Not supported yet"),
     ("echo_canceller", "Echo Canceller", "Not supported yet"),
 ):

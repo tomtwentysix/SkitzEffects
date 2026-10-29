@@ -1,0 +1,41 @@
+# Goes in the packaging repo as .github/workflows/update.yml. A push from here fires
+# COPR's webhook, which rebuilds the package.
+name: Follow DeepFilterNet releases
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move the spec to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          spec=ladspa-deepfilternet.spec
+          latest=$(gh api repos/Rikorose/DeepFilterNet/releases/latest --jq .tag_name)
+          latest=${latest#v}
+          current=$(sed -n 's/^Version:[[:space:]]*//p' "$spec")
+          newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -1)
+          if [ "$latest" = "$current" ] || [ "$newest" != "$latest" ]; then
+            echo "Already at $current"
+            exit 0
+          fi
+          stamp=$(LC_ALL=C date -u '+%a %b %d %Y')
+          awk -v v="$latest" -v d="$stamp" '
+            /^Version:/ { print "Version:        " v; next }
+            /^Release:/ { print "Release:        1%{?dist}"; next }
+            /^%changelog/ { print; print "* " d " SolarFlare Developments <tom@solarflareit.co.uk> - " v "-1"; print "- Update to " v; print ""; next }
+            { print }' "$spec" > "$spec.new"
+          mv "$spec.new" "$spec"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update to $latest"
+          git push

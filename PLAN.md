@@ -21,7 +21,9 @@ mic ─► [input filter-chain: effects] ─► soundstage_source (lingering Aud
 ```
 - `pipewire.py`: live model from `pw-dump --monitor`; actions via `wpctl`/`pw-cli`.
 - `controller.py`: `Controller` (PipeWire, conflicts, devices) owns two `Pipeline`s (output,
-  input). Each follows the default device, takes the default back, loads per-device presets, and
+  input). Each plays through or records from the default device, which stays the real device as
+  in Easy Effects, moves app streams onto Soundstage's nodes with `target.object` metadata while
+  its chain runs (and back if it stops), loads per-device presets, and
   restarts its `pipewire -c` child on structural changes or live-updates controls via Props.
 - `graph.py`: filter-chain configs; `choose_route()` picks passthrough / HRIR / plain downmix.
 - `plugins.py`: Easy Effects key → LV2 port maps; `presets.py`: preset/IR/autoload files.
@@ -79,13 +81,31 @@ Midas UMC22 and the user's own presets.
 - `tests/` (pytest): `choose_route`, preset → controls mapping from real presets, graph output,
   the SPA-JSON reader and device rules, and preset loading in both Easy Effects formats.
 - Not tested: Bluetooth devices, and surround passthrough on physical 8-channel hardware.
+- Afterwards, at the user's request, Soundstage stopped taking the default device: GNOME now shows
+  the real device and app streams are moved instead. Switching from GNOME and quitting were
+  re-tested; PipeWire and WirePlumber restarts were not re-run after this change.
+- Inputs can record one chosen channel to both sides (Device Settings → Channel).
 
 ### M3: Easy Effects parity
 - Presets: rename, delete, duplicate, import/export, Easy Effects community preset folders.
 - Effects list: drag-and-drop reorder (replacing the up/down buttons).
-- Apps view: playing/recording apps with per-app exclude (Easy Effects' `blocklist` key).
-- Level meters and latency readout (source to be decided: LSP meter ports, or a lightweight
-  `pw-record` peak reader).
+- Done: Mixer page (Easy Effects' Players and Recorders): each app's volume and mute, and a switch
+  that leaves it out of the effects through the preset's `blocklist` key.
+- Done: before/after spectrum at the top of the Output and Input pages (curves or bars), a status
+  bar with output and mic peak meters and Output/Mic Pre-Gain sliders (`soundstage_sink` and the
+  mic's own volume), and a graphical parametric EQ. Levels come from `pw-record` taps in
+  `levels.py`; they are passive, so metering never wakes a device or opens the mic, except that
+  the Input page opens the mic while it is shown.
+- Latency readout.
+- Deep Noise Remover (DeepFilterNet's LADSPA plugin) on input. Fedora does not package it, so
+  `packaging/deepfilternet/` holds a spec for the SolarFlare COPR and a workflow that follows
+  upstream releases; Soundstage `Recommends:` it.
+- Done: Devices page redesign. Sections are In Use, Surround (moved here from its own page),
+  Outputs and Inputs; each device opens a settings window (name, preset, channel, Disable Suspend,
+  sample rate). Inputs are picked by device and named after the card; Channel picks the card's
+  input profile (stereo, input 1, input 2, mono mix), and Soundstage follows the renamed node.
+- Done: the header's menu picks the device for the page shown; presets moved to the top of the
+  effects sidebar.
 - More effects with packaged plugins: filter, delay, expander, multiband gate (LSP), the Calf
   effects (`lv2-calf-plugins`: bass enhancer, exciter, stereo tools, reverb, deesser), and echo
   cancellation on input via PipeWire's own echo-cancel module.
