@@ -98,8 +98,8 @@ Midas UMC22 and the user's own presets.
   the Input page opens the mic while it is shown.
 - Latency readout.
 - Deep Noise Remover (DeepFilterNet's LADSPA plugin) on input. Fedora does not package it, so
-  `packaging/deepfilternet/` holds a spec for the SolarFlare COPR and a workflow that follows
-  upstream releases; Skitz Effects `Recommends:` it.
+  github.com/tomtwentysix/ladspa-deepfilternet-rpm builds it in the same COPR, with a weekly
+  workflow that follows upstream releases; Skitz Effects `Recommends:` it.
 - Done: Devices page redesign. Sections are In Use, Surround (moved here from its own page),
   Outputs and Inputs; each device opens a settings window (name, preset, channel, Disable Suspend,
   sample rate). Inputs are picked by device and named after the card; Channel picks the card's
