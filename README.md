@@ -11,14 +11,21 @@ responses and the HRIR.
 
 Skitz Effects is not affiliated with Easy Effects or its developers.
 
-## Requirements
+## Installing
 
-- PipeWire with WirePlumber, `pipewire-utils` and `pipewire-module-filter-chain-lv2`
-- `lsp-plugins-lv2` and `lv2-zam-plugins`
-- GTK 4, libadwaita and PyGObject
+On Fedora, install from [COPR](https://copr.fedorainfracloud.org/coprs/solartw/skitz-effects/).
+Updates then arrive with your other system updates.
 
-The RPM depends on all of these. When running from a checkout, the setup wizard
-installs any that are missing.
+```bash
+sudo dnf copr enable solartw/skitz-effects
+```
+
+```bash
+sudo dnf install skitz-effects
+```
+
+The package pulls in PipeWire's filter-chain LV2 host and the LSP, ZAM and MDA plugins.
+Deep Noise Remover uses DeepFilterNet's LADSPA plugin, which comes from the same COPR.
 
 ## Running from a checkout
 

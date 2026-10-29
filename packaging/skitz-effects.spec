@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        0.1.0
+Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -56,5 +56,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/icons/hicolor/symbolic/apps/uk.co.solarflareit.SkitzEffects-symbolic.svg
 
 %changelog
+* Thu Oct 29 2026 Tom <tom@solarflareit.co.uk> - 1.0.0-1
+- Before/after spectrum, peak meters and Pre-Gain sliders, and a graphical parametric equalizer.
+- Mixer page with per-app volume and a switch to leave apps out of the effects.
+- The real device stays the default, as in Easy Effects; app streams are moved through the effects.
+- Devices page with per-device settings: name, preset, input channel, Disable Suspend and sample rate.
+- Bass Loudness through the MDA plugins, and Deep Noise Remover through DeepFilterNet.
+- Renamed from Soundstage; settings move across on first start.
+
 * Wed Oct 28 2026 Tom <tom@solarflareit.co.uk> - 0.1.0-1
 - First release: Easy Effects presets on output and input, per-device presets, 5.1 and 7.1 input with passthrough or HRIR downmixing, system-wide device names, and a setup wizard.
