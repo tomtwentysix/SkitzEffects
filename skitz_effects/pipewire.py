@@ -164,6 +164,11 @@ class PipeWire(GObject.Object):
         value = self._default_metadata().get((0, key))
         return value.get("name", "") if isinstance(value, dict) else ""
 
+    def fallback(self, media_class):
+        """WirePlumber's own pick while the configured default is missing, as GNOME shows it."""
+        kind = "sink" if media_class == "Audio/Sink" else "source"
+        return self._default(f"default.audio.{kind}")
+
     def stream_target(self, oid):
         """Where a stream has been sent with target.object metadata, or ""."""
         value = self._default_metadata().get((oid, "target.object"))

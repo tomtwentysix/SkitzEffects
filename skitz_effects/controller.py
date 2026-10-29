@@ -109,7 +109,9 @@ class Pipeline(GObject.Object):
         chosen = next((d for d in devices if d.name == self.state["device"]), None)
         if chosen or not self._missing_since or time.monotonic() - self._missing_since < MISSING_GRACE:
             return chosen
-        return next((d for d in devices if not d.virtual), None)
+        fallback = self.pw.fallback(self.media_class)
+        stand_ins = [d for d in devices if d.name == fallback] + [d for d in devices if not d.virtual]
+        return stand_ins[0] if stand_ins else None
 
     def display_name(self, device):
         """Inputs show the card's name, since what they record is a setting of the device."""
