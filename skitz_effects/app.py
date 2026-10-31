@@ -11,7 +11,7 @@ from gi.repository import Adw, Gdk, Gio, Gtk  # noqa: E402
 from . import config, migrate  # noqa: E402
 from .controller import Controller  # noqa: E402
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 DEVELOPER = "SolarFlare Developments"
 
 

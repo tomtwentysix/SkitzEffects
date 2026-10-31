@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -56,6 +56,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/icons/hicolor/symbolic/apps/uk.co.solarflareit.SkitzEffects-symbolic.svg
 
 %changelog
+* Sat Oct 31 2026 Tom <tom@solarflareit.co.uk> - 1.0.1-1
+- While the chosen device is unplugged, use the same stand-in device that GNOME shows.
+
 * Thu Oct 29 2026 Tom <tom@solarflareit.co.uk> - 1.0.0-1
 - Before/after spectrum, peak meters and Pre-Gain sliders, and a graphical parametric equalizer.
 - Mixer page with per-app volume and a switch to leave apps out of the effects.
