@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.5
+Version:        1.0.6
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.6-1
+- Stereo apps take their own path through the effects, without the HRIR or a surround mix; 7.1 apps
+  still go through the HRIR on stereo devices.
+- The HRIR convolvers use the part of the HRIR that holds its sound, spread evenly over each cycle,
+  which stops the crackling and dropouts they caused.
+
 * Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.5-1
 - An effects chain killed for overrunning its realtime budget restarts at normal priority, so the
   effects keep running when a game is alt-tabbed.
