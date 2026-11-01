@@ -42,6 +42,7 @@ cp -a skitz_effects %{buildroot}%{_datadir}/%{name}/
 install -Dm755 packaging/skitz-effects %{buildroot}%{_bindir}/skitz-effects
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications data/uk.co.solarflareit.SkitzEffects.desktop
 cp -a data/icons %{buildroot}%{_datadir}/
+install -Dm644 packaging/skitz-effects-copr.repo %{buildroot}%{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.SkitzEffects.desktop
@@ -54,6 +55,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/applications/uk.co.solarflareit.SkitzEffects.desktop
 %{_datadir}/icons/hicolor/scalable/apps/uk.co.solarflareit.SkitzEffects.svg
 %{_datadir}/icons/hicolor/symbolic/apps/uk.co.solarflareit.SkitzEffects-symbolic.svg
+%{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
 * Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.2-1

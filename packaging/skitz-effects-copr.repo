@@ -1,0 +1,4 @@
+# dnf5 override for the COPR repo, whose generated .repo file leaves metadata
+# to expire after dnf's default of 48 hours.
+[copr:copr.fedorainfracloud.org:solartw:skitz-effects]
+metadata_expire=4h
