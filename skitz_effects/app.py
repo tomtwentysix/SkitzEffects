@@ -125,4 +125,6 @@ class SkitzEffectsApplication(Adw.Application):
 
 
 def main():
+    # Started from GNOME, output goes to the journal through a pipe, which Python would buffer until exit.
+    sys.stdout.reconfigure(line_buffering=True)
     return SkitzEffectsApplication().run(sys.argv)
