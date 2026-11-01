@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.1
+Version:        1.0.2
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -56,6 +56,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/icons/hicolor/symbolic/apps/uk.co.solarflareit.SkitzEffects-symbolic.svg
 
 %changelog
+* Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.2-1
+- Preferences: start at login, start minimised, keep running in the background, show in the system tray.
+- Tray icon with Open, an effects switch and Quit (needs a StatusNotifier host, such as GNOME's AppIndicator extension).
+- The Mixer shows each app's channel layout, such as Stereo, 5.1 or 7.1, and follows format changes.
+- Every app's sound goes through the effects unless it is switched off in the Mixer.
+
 * Sat Oct 31 2026 Tom <tom@solarflareit.co.uk> - 1.0.1-1
 - While the chosen device is unplugged, use the same stand-in device that GNOME shows.
 
