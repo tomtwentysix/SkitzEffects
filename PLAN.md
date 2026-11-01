@@ -75,9 +75,9 @@ Midas UMC22 and the user's own presets.
   default and keeps the chosen device through a 5 second grace period); a stale object model
   after a PipeWire restart.
 - Added: Bass Loudness through MDA (`lv2-mdala-plugins`, now required), with builtin gain nodes
-  for the preset's input and output gain. Device Settings replaces the rename dialog: name,
-  Disable Suspend (`session.suspend-timeout-seconds = 0`) and Sample Rate (`audio.rate`), which
-  replaces the user's keep-awake loopback and global `clock.force-rate`.
+  for the preset's input and output gain. Device Settings replaces the rename dialog. Its Disable
+  Suspend and Sample Rate rules were later removed: pinning one device to 96 kHz under a 48 kHz
+  graph made the HRIR chain fall behind, and the user's own startup script handles the Dali.
 - `tests/` (pytest): `choose_route`, preset → controls mapping from real presets, graph output,
   the SPA-JSON reader and device rules, and preset loading in both Easy Effects formats.
 - Not tested: Bluetooth devices, and surround passthrough on physical 8-channel hardware.
@@ -101,8 +101,7 @@ Midas UMC22 and the user's own presets.
   github.com/tomtwentysix/ladspa-deepfilternet-rpm builds it in the same COPR, with a weekly
   workflow that follows upstream releases; Skitz Effects `Recommends:` it.
 - Done: Devices page redesign. Sections are In Use, Surround (moved here from its own page),
-  Outputs and Inputs; each device opens a settings window (name, preset, channel, Disable Suspend,
-  sample rate). Inputs are picked by device and named after the card; Channel picks the card's
+  Outputs and Inputs; each device opens a settings window (name, preset, channel). Inputs are picked by device and named after the card; Channel picks the card's
   input profile (stereo, input 1, input 2, mono mix), and Skitz Effects follows the renamed node.
 - Done: the header's menu picks the device for the page shown; presets moved to the top of the
   effects sidebar.

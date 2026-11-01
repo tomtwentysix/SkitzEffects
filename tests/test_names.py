@@ -54,16 +54,13 @@ def test_read_refuses_files_with_other_rules(tmp_path):
 
 def test_update_takes_over_old_files_and_round_trips(conf_dir):
     (conf_dir / "52-SWG-rename-devices.conf").write_text((FIXTURES / "52-SWG-rename-devices.conf").read_text())
-    names.update(DALI, {names.AWAKE: 0, names.RATE: 96000})
     names.rename(DALI, "Dali Headphones")
     assert (conf_dir / "52-SWG-rename-devices.conf.disabled").exists()
     assert not (conf_dir / "52-SWG-rename-devices.conf").exists()
-    assert names.node_props(DALI) == {names.AWAKE: 0, names.RATE: 96000,
-                                      "node.description": "Dali Headphones", "node.nick": "Dali Headphones"}
+    assert names.node_props(DALI) == {"node.description": "Dali Headphones", "node.nick": "Dali Headphones"}
     assert names.custom()[("node", DALI)] == "Dali Headphones"
     assert names.custom()[("card", "alsa_card.pci-0000_01_00.1")] == "Built In Audio"
     names.rename(DALI, "")
-    names.update(DALI, {names.AWAKE: None, names.RATE: None})
     assert ("node", DALI) not in names.rules()
     assert len(names.rules()) == 6
 

@@ -11,12 +11,7 @@ POSITION_NAMES = {"FL": "left", "FR": "right", "MONO": "mono"}
 INPUT_PROFILES = {"analog-stereo-input": "Both inputs (stereo)", "analog-stereo": "Both inputs (stereo)",
                   "analog-mono-left": "Input 1 only", "analog-mono-right": "Input 2 only",
                   "analog-mono": "Both inputs mixed to mono", "mono-fallback": "Mono"}
-RATES = (44100, 48000, 88200, 96000, 176400, 192000)
 TITLES = {"output": ("Output", "Outputs"), "input": ("Input", "Inputs")}
-
-
-def rate_label(rate):
-    return f"{rate / 1000:g} kHz"
 
 
 def channel_label(i, position):
@@ -103,11 +98,6 @@ class DevicesPage(Adw.PreferencesPage):
         channel = pipeline.state["device_channels"].get(name)
         if channel:
             parts.append(f"{POSITION_NAMES.get(channel, channel).capitalize()} channel only")
-        props = names.node_props(name)
-        if props.get(names.RATE):
-            parts.append(rate_label(props[names.RATE]))
-        if props.get(names.AWAKE) == 0:
-            parts.append("Never suspends")
         return " · ".join(parts) or "Default settings"
 
     def _open(self, pipeline, name):
@@ -139,7 +129,8 @@ class DeviceSettings(Adw.Dialog):
         view.add_top_bar(header)
         self.set_child(view)
 
-        general = Adw.PreferencesGroup(title="General")
+        general = Adw.PreferencesGroup(title="General", description="Renaming restarts the sound system, so audio "
+                                                                     "pauses for a moment")
         self.entry = None
         if names.renamable(name):
             self.entry = Adw.EntryRow(title="Name", text=description)
@@ -164,23 +155,6 @@ class DeviceSettings(Adw.Dialog):
             self.channel = self._channel_row()
             recording.add(self.channel)
             content.add(recording)
-
-        self.awake = self.rate = None
-        if names.renamable(name):
-            hardware = Adw.PreferencesGroup(
-                title="Hardware", description="Applying changes here restarts the sound system, so audio pauses "
-                                              "for a moment")
-            self.awake = Adw.SwitchRow(title="Disable Suspend",
-                                       subtitle="Keeps the device awake when nothing plays",
-                                       active=self.props.get(names.AWAKE) == 0)
-            hardware.add(self.awake)
-            if name.startswith("alsa_"):
-                self.rate = Adw.ComboRow(title="Sample Rate", model=Gtk.StringList.new(
-                    ["Automatic", *(rate_label(r) for r in RATES)]))
-                if self.props.get(names.RATE) in RATES:
-                    self.rate.set_selected(RATES.index(self.props[names.RATE]) + 1)
-                hardware.add(self.rate)
-            content.add(hardware)
 
     def _channel_row(self):
         device = next((d for d in self.pipeline.devices() if d.name == self.name), None)
@@ -233,12 +207,12 @@ class DeviceSettings(Adw.Dialog):
                     state["device_channels"].pop(self.name, None)
                 self.pipeline.queue_rebuild()
         self.controller.settings.save()
-        self._apply_hardware()
+        self._apply_name()
         self.page.queue_reload()
         self.close()
 
-    def _apply_hardware(self):
-        if self.awake is None:
+    def _apply_name(self):
+        if self.entry is None:
             return
         new_name = self.entry.get_text().strip()
         if new_name == self.description and "node.description" not in self.props:
@@ -246,8 +220,6 @@ class DeviceSettings(Adw.Dialog):
         changes = {
             "node.description": new_name or None,
             "node.nick": new_name or None,
-            names.AWAKE: 0 if self.awake.get_active() else None,
-            names.RATE: RATES[self.rate.get_selected() - 1] if self.rate and self.rate.get_selected() else None,
         }
         if all(self.props.get(key) == value for key, value in changes.items()):
             return
@@ -263,4 +235,4 @@ class DeviceSettings(Adw.Dialog):
         # The chains lose their links when WirePlumber restarts, so start them afresh once it is back.
         names.restart_wireplumber(
             lambda: GLib.timeout_add_seconds(2, lambda: self.controller.restart_chains() or False))
-        window.toast("Device settings applied")
+        window.toast("Renamed" if new_name else "Name reset")

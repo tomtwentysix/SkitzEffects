@@ -1,8 +1,7 @@
-"""Per-device settings kept as WirePlumber rules in a file Skitz Effects owns.
+"""System-wide device names, kept as WirePlumber rules in a file Skitz Effects owns.
 
-Node rules rename one output or input exactly as GNOME shows it, keep it from
-suspending or pin its sample rate; card rules rename a whole sound card, and
-GNOME adds the profile ("Analog Stereo"). Other files in the folder that hold
+Node rules rename one output or input exactly as GNOME shows it; card rules
+rename a whole sound card, and GNOME adds the profile ("Analog Stereo"). Other files in the folder that hold
 nothing but renames are taken over on the first change and disabled, so every
 name lives in one place.
 """
@@ -18,10 +17,8 @@ OWN = CONF_DIR / "60-skitz-effects-devices.conf"
 MONITORS = {"alsa_": "monitor.alsa.rules", "bluez_": "monitor.bluez.rules"}
 MATCH = {"node": "node.name", "card": "device.name"}
 NAME_KEYS = {"node": ("node.description", "node.nick"), "card": ("device.description", "device.nick")}
-AWAKE = "session.suspend-timeout-seconds"
-RATE = "audio.rate"
 # The props Skitz Effects writes, by rule kind; files holding anything else are left alone.
-KNOWN = {"node": {*NAME_KEYS["node"], AWAKE, RATE}, "card": set(NAME_KEYS["card"])}
+KNOWN = {kind: set(keys) for kind, keys in NAME_KEYS.items()}
 
 TOKEN = re.compile(r'\s+|#[^\n]*|"(?:\\.|[^"\\])*"|[{}\[\]=:,]|[^\s{}\[\]=:,"#]+')
 
