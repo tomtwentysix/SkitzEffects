@@ -34,7 +34,7 @@ class SkitzEffectsWindow(Adw.ApplicationWindow):
         header.pack_start(self.devices_button)
 
         menu = Gio.Menu()
-        menu.append("Run Setup Again", "app.setup")
+        menu.append("Preferences", "app.preferences")
         menu.append("About Skitz Effects", "app.about")
         menu.append("Quit", "app.quit")
         header.pack_end(Gtk.MenuButton(icon_name="open-menu-symbolic", menu_model=menu, primary=True,
@@ -110,6 +110,10 @@ class SkitzEffectsWindow(Adw.ApplicationWindow):
         self._update_banner()
         if pipeline is self.pipeline:
             self._update_device_label()
+            if self.enabled.get_active() != pipeline.state["enabled"]:
+                self._binding = True
+                self.enabled.set_active(pipeline.state["enabled"])
+                self._binding = False
 
     def _show_banner(self, title, button="", action=None):
         self.banner.set_title(title)
@@ -158,6 +162,11 @@ class SkitzEffectsWindow(Adw.ApplicationWindow):
     def _on_device_activated(self, _list, row):
         self.devices_button.popdown()
         self.pipeline.select_device(row.device)
+
+    def show_preferences(self):
+        from .preferences import PreferencesDialog
+
+        PreferencesDialog(self.get_application()).present(self)
 
     def run_setup(self, first_run=False):
         from .wizard import SetupWizard

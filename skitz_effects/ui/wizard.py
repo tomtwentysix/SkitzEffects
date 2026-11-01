@@ -170,7 +170,8 @@ class SetupWizard(Adw.Dialog):
     def _finish(self):
         page = Adw.PreferencesPage()
         group = Adw.PreferencesGroup(title="Running")
-        self.autostart_row = Adw.SwitchRow(title="Start at login", active=True)
+        self.autostart_row = Adw.SwitchRow(title="Start at login",
+                                           active=deps.autostart_enabled() or not self.settings.setup_done)
         self.background_row = Adw.SwitchRow(
             title="Keep running when the window is closed",
             subtitle="Effects only apply while Skitz Effects is running", active=self.settings.run_in_background)
@@ -191,7 +192,7 @@ class SetupWizard(Adw.Dialog):
         s.run_in_background = self.background_row.get_active()
         s.setup_done = True
         s.save()
-        deps.set_autostart(self.autostart_row.get_active(), autostart_command())
+        self.app.set_autostart(self.autostart_row.get_active())
         controller = self.app.controller
         for pipeline in controller.pipelines:
             if pipeline.preset is None:
@@ -200,4 +201,5 @@ class SetupWizard(Adw.Dialog):
                     pipeline.load_preset(first)
         controller.start()
         self.app.hold_in_background()
+        self.app.set_tray(s.show_tray)
         self.force_close()

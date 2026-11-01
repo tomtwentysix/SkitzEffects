@@ -47,6 +47,9 @@ class Settings:
     downmix: str = "auto"
     hrir: str = ""
     run_in_background: bool = True
+    # Only applies to the launch at login.
+    start_minimised: bool = True
+    show_tray: bool = True
     # "curves" or "bars".
     analyser: str = "curves"
 

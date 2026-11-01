@@ -130,12 +130,16 @@ def running_conflicts(node_names):
 AUTOSTART = Path(GLib.get_user_config_dir()) / "autostart" / "uk.co.solarflareit.SkitzEffects.desktop"
 
 
-def set_autostart(on, command):
+def autostart_enabled():
+    return AUTOSTART.exists()
+
+
+def set_autostart(on, command, background=True):
     if not on:
         AUTOSTART.unlink(missing_ok=True)
         return
     AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
     AUTOSTART.write_text(
         "[Desktop Entry]\nType=Application\nName=Skitz Effects\nIcon=uk.co.solarflareit.SkitzEffects\n"
-        f"Exec={command} --background\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"
+        f"Exec={command}{' --background' if background else ''}\nX-GNOME-Autostart-enabled=true\nNoDisplay=true\n"
     )

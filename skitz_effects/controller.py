@@ -240,6 +240,7 @@ class Pipeline(GObject.Object):
     def set_enabled(self, on):
         self.state["enabled"] = on
         self.controller.settings.save()
+        self.emit("state-changed")
         self.queue_rebuild()
 
     def restart(self):
