@@ -1,4 +1,3 @@
-import subprocess
 import sys
 from pathlib import Path
 
@@ -10,7 +9,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import config, deps, migrate  # noqa: E402
-from .controller import Controller, _die_with_parent  # noqa: E402
+from .controller import Controller  # noqa: E402
 
 VERSION = "1.0.1"
 ICONS = Path(__file__).parent.parent / "data" / "icons"
@@ -32,7 +31,7 @@ class SkitzEffectsApplication(Adw.Application):
         self._add_action("about", self._on_about)
         self._add_action("setup", lambda *_: self.window().run_setup())
         self._add_action("preferences", lambda *_: self.window().show_preferences(), ["<primary>comma"])
-        # The tray icon's menu uses these two over D-Bus.
+        # The tray icon's menu uses these two.
         self._add_action("show", lambda *_: self.activate())
         output = self.controller.output
         self.effects = Gio.SimpleAction.new_stateful("effects", None, GLib.Variant("b", output.state["enabled"]))
@@ -88,17 +87,14 @@ class SkitzEffectsApplication(Adw.Application):
             self.effects.set_state(GLib.Variant("b", output.state["enabled"]))
 
     def set_tray(self, on):
-        """Starts or stops the tray icon, which needs a StatusNotifier host such as GNOME's AppIndicator extension."""
-        running = self._tray is not None and self._tray.poll() is None
-        if on and not running and _has_tray_host():
-            # From a checkout the icon is not installed, so the tray host is given its file.
-            icon = ICONS / "hicolor" / "symbolic" / "apps" / f"{config.ICON_NAME}-symbolic.svg"
-            argv = [sys.executable, "-m", "skitz_effects.tray", config.APP_ID] + ([str(icon)] if icon.exists() else [])
-            self._tray = subprocess.Popen(argv,
-                                          preexec_fn=_die_with_parent, stdin=subprocess.DEVNULL)
-        elif not on and running:
-            self._tray.terminate()
-            self._tray.wait(timeout=2)
+        """Shows or hides the tray icon, which appears once a StatusNotifier host such as GNOME's AppIndicator extension runs."""
+        if on and self._tray is None:
+            from .tray import Tray
+
+            # From a checkout the icon is not installed, so the tray host is pointed at this folder.
+            self._tray = Tray(self, str(ICONS) if ICONS.is_dir() else "")
+        elif not on and self._tray is not None:
+            self._tray.close()
             self._tray = None
 
     def set_autostart(self, on):
@@ -126,14 +122,6 @@ class SkitzEffectsApplication(Adw.Application):
             comments="Audio effects for PipeWire with surround sound and HRIR downmixing",
         )
         about.present(self.props.active_window)
-
-
-def _has_tray_host():
-    bus = Gio.bus_get_sync(Gio.BusType.SESSION)
-    reply = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner",
-                          GLib.Variant("(s)", ("org.kde.StatusNotifierWatcher",)), None, Gio.DBusCallFlags.NONE,
-                          -1, None)
-    return reply.unpack()[0]
 
 
 def main():

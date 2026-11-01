@@ -22,7 +22,6 @@ Requires:       pipewire-module-filter-chain-lv2
 Requires:       lsp-plugins-lv2
 Requires:       lv2-zam-plugins
 Requires:       lv2-mdala-plugins
-Requires:       libayatana-appindicator-gtk3
 Recommends:     ladspa-deepfilternet
 
 %description
