@@ -33,6 +33,9 @@ def input_variants(profiles, current):
     return out
 
 
+LAYOUT_TITLES = {"stereo": "Effects", "5.1": "5.1 Surround", "7.1": "7.1 Surround"}
+
+
 def app_key(props):
     """How Easy Effects names an app in a preset's blocklist."""
     return props.get("application.id") or props.get("application.name") or props.get("node.name", "")
@@ -83,7 +86,7 @@ class Pipeline(GObject.Object):
         self.stream_class = "Stream/Output/Audio" if output else "Stream/Input/Audio"
         self.virtual = graph.SINK if output else graph.SOURCE
         self.virtual_class = "Audio/Sink" if output else "Audio/Source/Virtual"
-        self.virtual_description = "Skitz Effects" if output else "Skitz Effects Microphone"
+        self.virtual_description = "Skitz Effects Microphone"
         self.control_node = graph.CAPTURE if output else graph.MIC_CAPTURE
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.route = ""
@@ -146,15 +149,24 @@ class Pipeline(GObject.Object):
     def positions(self):
         return LAYOUTS[self.controller.settings.layout] if self.direction == "output" else LAYOUTS["stereo"]
 
+    def virtual_label(self):
+        """The output sink is named after the device it plays through, which is what GNOME shows."""
+        if self.direction == "input":
+            return self.virtual_description
+        device = self.state["device_names"].get(self.state["device"], "Skitz Effects")
+        return f"{device} · {LAYOUT_TITLES[self.controller.settings.layout]}"
+
     def sync(self):
         pw = self.pw
         positions = self.positions()
         channels = pw.node_channels(self.virtual)
-        if channels != len(positions):
+        label = self.virtual_label()
+        # Names are fixed once a node exists, so a new device or layout means a new node.
+        if channels != len(positions) or (channels and pw.node_description(self.virtual) != label):
             if channels:
                 pw.destroy(self.virtual)
             else:
-                pw.create_virtual(self.virtual, self.virtual_description, self.virtual_class, positions)
+                pw.create_virtual(self.virtual, label, self.virtual_class, positions)
             return
         default = pw.default(self.media_class)
         devices = self.devices()
@@ -164,13 +176,20 @@ class Pipeline(GObject.Object):
             siblings = [d.name for d in devices if d.name.startswith(base)]
             if len(siblings) == 1:
                 self._migrate(self.state["device"], siblings[0])
-        if any(d.name == default for d in devices):
-            # The default stays the real device, as GNOME shows it, and Skitz Effects plays through it.
+        if self.direction == "output":
+            # Apps pick their channel count from the default output, so it is Skitz Effects' sink,
+            # which has the surround layout. Choosing a device elsewhere, such as in GNOME, still
+            # switches Skitz Effects to it.
+            if any(d.name == default for d in devices):
+                self.select_device(default)
+            if default != self.virtual:
+                pw.set_default(self.virtual)
+        elif any(d.name == default for d in devices):
+            # The mic stays the default, as GNOME shows it, and Skitz Effects records through it.
             self.select_device(default)
         elif any(d.name == self.state["device"] for d in devices):
-            # Something else is the default, such as Skitz Effects' own node in older versions.
             pw.set_default(self.state["device"])
-        elif not self.state["device"]:
+        if not self.state["device"]:
             fallback = next((d for d in devices if not d.virtual), None)
             if fallback:
                 self.select_device(fallback.name)
@@ -221,8 +240,9 @@ class Pipeline(GObject.Object):
         self._route_streams()
 
     def select_device(self, name):
-        if self.pw and self.pw.default(self.media_class) != name:
-            self.pw.set_default(name)
+        target = self.virtual if self.direction == "output" else name
+        if self.pw and self.pw.default(self.media_class) != target:
+            self.pw.set_default(target)
         if name == self.state["device"]:
             return
         self.state["device"] = name
@@ -374,6 +394,9 @@ class Pipeline(GObject.Object):
         self._flush_save()
         self._stop_chain()
         self._route_streams()
+        if self.direction == "output" and self.state["device"]:
+            # Hand the default back to the device, or WirePlumber picks one of its own.
+            self.pw.set_default(self.state["device"])
         self.pw.destroy(self.virtual)
 
     def _queue_save(self):

@@ -259,6 +259,10 @@ class PipeWire(GObject.Object):
                 return _channels(info)
         return 0
 
+    def node_description(self, name):
+        oid = self.node_id(name)
+        return ((self.objects.get(oid) or {}).get("info") or {}).get("props", {}).get("node.description", "")
+
     def node_names(self):
         return [info.get("props", {}).get("node.name", "") for _oid, info in self.nodes()]
 
