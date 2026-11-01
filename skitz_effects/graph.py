@@ -75,9 +75,9 @@ class Graph:
             self.link(src, f"{name}:In {i}")
         return f"{name}:Out"
 
-    def convolver(self, name, path, channel, gain=1.0, source=None):
+    def convolver(self, name, path, channel, gain=1.0, source=None, **extra):
         self.add(type="builtin", label="convolver", name=name,
-                 config={"filename": str(path), "channel": channel, "gain": gain})
+                 config={"filename": str(path), "channel": channel, "gain": gain, **extra})
         if source:
             self.link(source, f"{name}:In")
         return f"{name}:Out"
@@ -131,14 +131,20 @@ def gain_stage(graph, name, gain, left, right):
     return f"{name}_l:Out", f"{name}_r:Out"
 
 
+# Past `tailsize` samples, the convolver works the rest of the IR in one batch every that many
+# samples. With all 16 HRIR convolvers doing so in the same cycle the chain overran and
+# crackled, so the tail starts beyond any HRIR's length and the work stays even.
+HRIR_TAIL = 32768
+
+
 def hrir_downmix(graph, layout, hrir):
     remap = HRIR_SOURCE.get(layout, {})
     left, right = [], []
     for ch in LAYOUTS[layout]:
         src = graph.copy(f"in_{ch}")
         ir_l, ir_r = HESUVI[remap.get(ch, ch)]
-        left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out"))
-        right.append(graph.convolver(f"hrir_{ch}_r", hrir, ir_r, source=f"{src}:Out"))
+        left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out", tailsize=HRIR_TAIL))
+        right.append(graph.convolver(f"hrir_{ch}_r", hrir, ir_r, source=f"{src}:Out", tailsize=HRIR_TAIL))
     inputs = [f"in_{ch}:In" for ch in LAYOUTS[layout]]
     return inputs, graph.mixer("hrir_mix_l", left), graph.mixer("hrir_mix_r", right)
 
