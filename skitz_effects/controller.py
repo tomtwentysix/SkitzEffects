@@ -179,15 +179,22 @@ class Pipeline(GObject.Object):
         self.queue_rebuild()
 
     def _route_streams(self):
-        """Sends app streams through Skitz Effects while its chain runs, and straight to the device otherwise.
+        """Sends every app stream through Skitz Effects while its chain runs, unless the mixer leaves it out.
 
-        Streams moved elsewhere by the user, or that name their own target, are left alone.
+        This overrides targets restored by WirePlumber, such as an old Easy Effects sink. Streams
+        that name their own target are left alone, and a stream left out or waiting for the chain
+        goes back to the default only if Skitz Effects had sent it here.
         """
         pw = self.pw
         for oid, props in pw.streams(self.stream_class):
-            target = self.virtual if self.chain_running and not self.blocked(props) else ""
-            if routable(props) and pw.stream_target(oid) in ("", self.virtual) and pw.stream_target(oid) != target:
-                pw.move(oid, target)
+            if not routable(props):
+                continue
+            current = pw.stream_target(oid)
+            if self.chain_running and not self.blocked(props):
+                if current != self.virtual:
+                    pw.move(oid, self.virtual)
+            elif current == self.virtual:
+                pw.move(oid, "")
 
     def blocked(self, props):
         """Apps left out of the effects, kept in the preset's blocklist as Easy Effects does."""

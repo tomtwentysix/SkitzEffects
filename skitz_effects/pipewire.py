@@ -75,6 +75,7 @@ class PipeWire(GObject.Object):
         self.metadata = {}
         # Actions sent but not yet seen in pw-dump, as {key: deadline}; see _once().
         self._pending = {}
+        self._reloading = set()
         self._proc = Gio.Subprocess.new(["pw-dump", "--monitor", "--no-colors"], Gio.SubprocessFlags.STDOUT_PIPE)
         self._stream = Gio.DataInputStream.new(self._proc.get_stdout_pipe())
         self._lines = []
@@ -112,6 +113,7 @@ class PipeWire(GObject.Object):
         # Removals arrive as {"id": n, "info": null}; metadata objects carry their
         # props at the top level and list only the entries that changed, each one
         # keyed by the object it is about (its subject) as well as its key.
+        # A removed entry shows up only as an empty list, without saying which.
         for obj in batch:
             oid = obj["id"]
             if obj.get("metadata"):
@@ -122,11 +124,17 @@ class PipeWire(GObject.Object):
                         entries.pop(key, None)
                     else:
                         entries[key] = m["value"]
+            elif obj.get("metadata") == [] and oid in self.metadata:
+                self._reload_metadata(oid)
             if "type" in obj:
                 self.objects[oid] = obj
             elif obj.get("info", obj.get("metadata", 0)) is None:
                 self.objects.pop(oid, None)
                 self.metadata.pop(oid, None)
+                # Ids are reused, so a closed stream's entries must not carry over to the next.
+                for entries in self.metadata.values():
+                    for key in [k for k in entries if k[0] == oid]:
+                        del entries[key]
             elif obj.get("info") and oid in self.objects:
                 self.objects[oid]["info"] = obj["info"]
         self.ready = True
@@ -140,6 +148,30 @@ class PipeWire(GObject.Object):
                     or action == "move" and self.stream_target(target[0]) == target[1]):
                 del self._pending[key]
         self.emit("changed")
+
+    def _reload_metadata(self, oid):
+        if oid in self._reloading:
+            return
+        self._reloading.add(oid)
+        try:
+            proc = Gio.Subprocess.new(["pw-dump", "--no-colors", str(oid)], Gio.SubprocessFlags.STDOUT_PIPE)
+        except GLib.Error:
+            self._reloading.discard(oid)
+            return
+        proc.communicate_utf8_async(None, None, self._on_metadata_reloaded, oid)
+
+    def _on_metadata_reloaded(self, proc, result, oid):
+        self._reloading.discard(oid)
+        try:
+            _ok, out, _err = proc.communicate_utf8_finish(result)
+            dump = json.loads(out or "[]")
+        except (GLib.Error, ValueError):
+            return
+        for obj in dump:
+            if obj.get("id") == oid and oid in self.metadata:
+                self.metadata[oid] = {(m.get("subject", 0), m["key"]): m["value"]
+                                      for m in obj.get("metadata") or [] if m.get("value") is not None}
+                self.emit("changed")
 
     def _once(self, action, target):
         """False while the same action is still on its way, so a burst of updates sends it only once.
