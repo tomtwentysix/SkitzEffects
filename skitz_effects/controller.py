@@ -42,14 +42,22 @@ def truthy(value):
     return value is True or str(value).lower() == "true"
 
 
+# Streams aimed at Easy Effects were set up to go through effects, so they come here instead.
+EASY_EFFECTS_TARGETS = {"easyeffects_sink", "easyeffects_source"}
+
+
 def routable(props):
     """Whether an app stream should go through Skitz Effects.
 
     Left out: Skitz Effects' own streams, other filters and loopbacks (they have a
     link group), streams that capture a sink's monitor or only measure levels,
-    and streams that name their own target.
+    and streams that name their own target, unless that target is Easy Effects.
     """
-    return not (props.get("node.name", "").startswith("skitz_") or props.get("node.link-group")
+    if props.get("node.name", "").startswith("skitz_"):
+        return False
+    if {props.get("target.object"), props.get("node.target")} & EASY_EFFECTS_TARGETS:
+        return True
+    return not (props.get("node.link-group")
                 or truthy(props.get("stream.capture.sink")) or truthy(props.get("stream.monitor"))
                 or props.get("target.object") or props.get("node.target"))
 

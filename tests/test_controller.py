@@ -37,3 +37,11 @@ def test_app_key_matches_easy_effects_blocklist_names():
     assert app_key({"application.id": "org.gnome.Rhythmbox3", "application.name": "Rhythmbox"}) == "org.gnome.Rhythmbox3"
     assert app_key({"application.name": "Firefox", "node.name": "Firefox"}) == "Firefox"
     assert app_key({"node.name": "mpv"}) == "mpv"
+
+
+def test_streams_aimed_at_easy_effects_come_through_skitz_effects():
+    loopback = {"node.name": "output.pw-loopback-1", "node.link-group": "loopback-1-20",
+                "node.target": "easyeffects_sink"}
+    assert routable(loopback)
+    assert routable({"node.name": "obs-mic", "target.object": "easyeffects_source"})
+    assert not routable({"node.name": "skitz_output", "target.object": "easyeffects_sink"})
