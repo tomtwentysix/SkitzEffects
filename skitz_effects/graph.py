@@ -22,6 +22,10 @@ PLAYBACK = "skitz_output"
 SOURCE = "skitz_source"
 MIC_CAPTURE = "skitz_mic"
 MIC_PLAYBACK = "skitz_mic_output"
+# On the HRIR route, stereo apps play into this sink and skip the HRIR.
+STEREO_SINK = "skitz_stereo"
+STEREO_CAPTURE = "skitz_stereo_effects"
+STEREO_PLAYBACK = "skitz_stereo_output"
 
 # Channel indices in a HeSuVi 14-channel HRIR, as (left ear, right ear).
 HESUVI = {"FL": (0, 1), "SL": (2, 3), "RL": (4, 5), "FC": (6, 13), "FR": (8, 7), "SR": (10, 9), "RR": (12, 11)}
@@ -135,6 +139,10 @@ def gain_stage(graph, name, gain, left, right):
 # samples. With all 16 HRIR convolvers doing so in the same cycle the chain overran and
 # crackled, so the tail starts beyond any HRIR's length and the work stays even.
 HRIR_TAIL = 32768
+# HRIRs often carry a long, faint room tail: in a typical HeSuVi file 99.99% of the energy is in the
+# first 2048 samples and the rest is over 55 dB down. Cutting it there keeps 16 convolvers cheap
+# enough to run without crackling, at 96 kHz too.
+HRIR_LENGTH = 2048
 
 
 def hrir_downmix(graph, layout, hrir):
@@ -143,8 +151,10 @@ def hrir_downmix(graph, layout, hrir):
     for ch in LAYOUTS[layout]:
         src = graph.copy(f"in_{ch}")
         ir_l, ir_r = HESUVI[remap.get(ch, ch)]
-        left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out", tailsize=HRIR_TAIL))
-        right.append(graph.convolver(f"hrir_{ch}_r", hrir, ir_r, source=f"{src}:Out", tailsize=HRIR_TAIL))
+        left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out", tailsize=HRIR_TAIL,
+                                    length=HRIR_LENGTH))
+        right.append(graph.convolver(f"hrir_{ch}_r", hrir, ir_r, source=f"{src}:Out", tailsize=HRIR_TAIL,
+                                     length=HRIR_LENGTH))
     inputs = [f"in_{ch}:In" for ch in LAYOUTS[layout]]
     return inputs, graph.mixer("hrir_mix_l", left), graph.mixer("hrir_mix_r", right)
 
@@ -170,9 +180,9 @@ def plain_inputs(graph):
     return [f"{graph.copy('in_l')}:In", f"{graph.copy('in_r')}:In"], "in_l:Out", "in_r:Out"
 
 
-def config_text(description, graph, inputs, outputs, capture, playback):
+def filter_chain(description, graph, inputs, outputs, capture, playback):
     # Both ends are passive, so nothing is held open while no app is playing or recording.
-    module = {
+    return {
         "name": "libpipewire-module-filter-chain",
         "args": {
             "node.description": description,
@@ -183,6 +193,9 @@ def config_text(description, graph, inputs, outputs, capture, playback):
                                **playback},
         },
     }
+
+
+def config_text(*modules):
     conf = {
         "context.properties": {"log.level": 0},
         "context.spa-libs": {"audio.convert.*": "audioconvert/libspa-audioconvert",
@@ -192,7 +205,7 @@ def config_text(description, graph, inputs, outputs, capture, playback):
             {"name": "libpipewire-module-protocol-native"},
             {"name": "libpipewire-module-client-node"},
             {"name": "libpipewire-module-adapter"},
-            module,
+            *modules,
         ],
     }
     return json.dumps(conf, indent=2)
@@ -218,11 +231,22 @@ def build(preset, enabled, route, layout, hrir, target):
     outputs = stereo_chain(graph, preset, enabled, left, right)
     capture = LAYOUTS[layout] if route in ("passthrough", "hrir") else LAYOUTS["stereo"]
     playback = LAYOUTS[layout] if route == "passthrough" else LAYOUTS["stereo"]
-    return config_text(
+    modules = [filter_chain(
         "Skitz Effects Output", graph, inputs, outputs,
         {"node.name": CAPTURE, "target.object": SINK, "stream.capture.sink": True, **channels(capture)},
         {"node.name": PLAYBACK, "target.object": target, **channels(playback)},
-    )
+    )]
+    # Stereo streams take a path of their own, so they never go through the HRIR or a surround mix.
+    if layout != "stereo":
+        stereo = Graph()
+        stereo_inputs, left, right = plain_inputs(stereo)
+        modules.append(filter_chain(
+            "Skitz Effects Stereo Output", stereo, stereo_inputs, stereo_chain(stereo, preset, enabled, left, right),
+            {"node.name": STEREO_CAPTURE, "target.object": STEREO_SINK, "stream.capture.sink": True,
+             **channels(LAYOUTS["stereo"])},
+            {"node.name": STEREO_PLAYBACK, "target.object": target, **channels(LAYOUTS["stereo"])},
+        ))
+    return config_text(*modules)
 
 
 def build_input(preset, enabled, device, channel="", positions=()):
@@ -239,12 +263,12 @@ def build_input(preset, enabled, device, channel="", positions=()):
         inputs, left, right = plain_inputs(graph)
         capture = stereo
     outputs = stereo_chain(graph, preset, enabled, left, right)
-    return config_text(
+    return config_text(filter_chain(
         "Skitz Effects Microphone", graph, inputs, outputs,
         {"node.name": MIC_CAPTURE, "target.object": device, **capture},
         # WirePlumber only links playback streams to sinks, so the controller links this one to the source.
         {"node.name": MIC_PLAYBACK, "node.autoconnect": False, **stereo},
-    )
+    ))
 
 
 def live_controls(effect_id, effect, settings):

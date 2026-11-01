@@ -169,6 +169,8 @@ class Pipeline(GObject.Object):
             else:
                 pw.create_virtual(self.virtual, label, self.virtual_class, positions)
             return
+        if self.direction == "output":
+            self._sync_stereo_sink()
         default = pw.default(self.media_class)
         devices = self.devices()
         if self.state["device"] and not any(d.name == self.state["device"] for d in devices):
@@ -206,6 +208,30 @@ class Pipeline(GObject.Object):
         self._route_streams()
         self.queue_rebuild()
 
+    def has_stereo_sink(self):
+        """Every app sees the surround sink; streams that turn out to be stereo move to a stereo one,
+        whose chain has no HRIR or surround mix."""
+        return self.direction == "output" and self.controller.settings.layout != "stereo"
+
+    def _sync_stereo_sink(self):
+        pw = self.pw
+        label = self.virtual_label().rsplit(" · ", 1)[0] + " · Stereo"
+        exists = pw.node_id(graph.STEREO_SINK) is not None
+        if self.has_stereo_sink():
+            if exists and pw.node_description(graph.STEREO_SINK) != label:
+                pw.destroy(graph.STEREO_SINK)
+            elif not exists:
+                pw.create_virtual(graph.STEREO_SINK, label, "Audio/Sink", LAYOUTS["stereo"])
+        elif exists:
+            pw.destroy(graph.STEREO_SINK)
+
+    def _target(self, oid):
+        # Until its format is known a stream stays on the surround sink, where apps first connect.
+        stereo = 0 < self.pw.stream_channels(oid) <= 2
+        if stereo and self.has_stereo_sink() and self.pw.node_id(graph.STEREO_SINK):
+            return graph.STEREO_SINK
+        return self.virtual
+
     def _route_streams(self):
         """Sends every app stream through Skitz Effects while its chain runs, unless the mixer leaves it out.
 
@@ -219,9 +245,10 @@ class Pipeline(GObject.Object):
                 continue
             current = pw.stream_target(oid)
             if self.chain_running and not self.blocked(props):
-                if current != self.virtual:
-                    pw.move(oid, self.virtual)
-            elif current == self.virtual:
+                target = self._target(oid)
+                if current != target:
+                    pw.move(oid, target)
+            elif current in (self.virtual, graph.STEREO_SINK):
                 pw.move(oid, "")
 
     def blocked(self, props):
@@ -293,6 +320,8 @@ class Pipeline(GObject.Object):
         self._rebuild_id = 0
         device = self.device
         if not self.controller.running or device is None or not self.pw.node_id(self.virtual):
+            return False
+        if self.has_stereo_sink() and not self.pw.node_id(graph.STEREO_SINK):
             return False
         route, conf = self._build(device)
         if route != self.route:
@@ -397,7 +426,9 @@ class Pipeline(GObject.Object):
         if controls is None:
             self.queue_rebuild()
         elif self.preset.enabled(effect_id) and self.pw:
-            self.pw.set_controls(self.control_node, controls)
+            for node in (self.control_node, graph.STEREO_CAPTURE if self.has_stereo_sink() else None):
+                if node:
+                    self.pw.set_controls(node, controls)
             # The running chain now matches the edited preset, so it needs no restart.
             if self.device:
                 self._conf = self._build(self.device)[1]
@@ -410,6 +441,7 @@ class Pipeline(GObject.Object):
             # Hand the default back to the device, or WirePlumber picks one of its own.
             self.pw.set_default(self.state["device"])
         self.pw.destroy(self.virtual)
+        self.pw.destroy(graph.STEREO_SINK)
 
     def _queue_save(self):
         if self._save_id:

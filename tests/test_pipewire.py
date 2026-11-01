@@ -47,7 +47,8 @@ def route(streams, targets, blocked=(), running=True):
     pw = SimpleNamespace(streams=lambda _cls: streams.items(), stream_target=lambda oid: targets.get(oid, ""),
                          move=lambda oid, to: moves.append((oid, to)))
     pipeline = SimpleNamespace(pw=pw, stream_class="Stream/Output/Audio", virtual="skitz_sink",
-                               chain_running=running, blocked=lambda props: props["application.name"] in blocked)
+                               chain_running=running, blocked=lambda props: props["application.name"] in blocked,
+                               _target=lambda oid: "skitz_sink")
     Pipeline._route_streams(pipeline)
     return moves
 
@@ -69,3 +70,13 @@ def test_streams_left_out_in_the_mixer_return_to_the_device():
 def test_streams_wait_on_the_device_while_the_chain_is_down():
     streams = {1: {"application.name": "mpv", "node.name": "mpv"}}
     assert route(streams, {1: "skitz_sink"}, running=False) == [(1, "")]
+
+
+def test_streams_take_the_stereo_path_once_they_turn_out_stereo():
+    channels = {1: 2, 2: 8, 3: 0, 4: 1}
+    pw = SimpleNamespace(stream_channels=lambda oid: channels[oid], node_id=lambda name: 7)
+    pipeline = SimpleNamespace(pw=pw, virtual="skitz_sink", has_stereo_sink=lambda: True)
+    targets = {oid: Pipeline._target(pipeline, oid) for oid in channels}
+    assert targets == {1: "skitz_stereo", 2: "skitz_sink", 3: "skitz_sink", 4: "skitz_stereo"}
+    pipeline.has_stereo_sink = lambda: False
+    assert Pipeline._target(pipeline, 1) == "skitz_sink"

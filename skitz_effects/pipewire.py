@@ -231,6 +231,12 @@ class PipeWire(GObject.Object):
             if props.get("media.class") == media_class:
                 yield oid, props
 
+    def stream_channels(self, oid):
+        """A stream's channel count once its format is set, or 0 before that."""
+        info = (self.objects.get(oid) or {}).get("info") or {}
+        formats = info.get("params", {}).get("Format") or []
+        return next((f["channels"] for f in formats if isinstance(f.get("channels"), int)), 0)
+
     def layout(self, oid):
         """A node's channel layout name; streams report theirs as soon as their format is set."""
         info = (self.objects.get(oid) or {}).get("info") or {}

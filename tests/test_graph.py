@@ -194,3 +194,18 @@ def test_without_realtime_drops_only_the_rt_module():
     stripped = [m["name"] for m in json.loads(graph.without_realtime(text))["context.modules"]]
     assert "libpipewire-module-rt" in names
     assert stripped == [n for n in names if n != "libpipewire-module-rt"]
+
+
+def test_surround_layouts_give_stereo_apps_their_own_path(ee_root, lv2):
+    text = graph.build(presets.load("Dali iO6"), True, "hrir", "7.1", HRIR, TARGET)
+    stereo = chain_args(text, 1)
+    assert stereo["capture.props"]["target.object"] == graph.STEREO_SINK
+    assert stereo["capture.props"]["node.name"] == graph.STEREO_CAPTURE
+    assert stereo["playback.props"]["target.object"] == TARGET
+    labels = {n.get("label") for n in stereo["filter.graph"]["nodes"]}
+    assert "convolver" not in labels
+    assert plugins.EFFECTS["equalizer"].uri in {n.get("plugin") for n in stereo["filter.graph"]["nodes"]}
+    def chains(text):
+        return len([m for m in json.loads(text)["context.modules"] if "filter-chain" in m["name"]])
+    assert chains(graph.build(None, True, "passthrough", "7.1", HRIR, TARGET)) == 2
+    assert chains(graph.build(None, True, "passthrough", "stereo", HRIR, TARGET)) == 1

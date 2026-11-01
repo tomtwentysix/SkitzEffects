@@ -122,6 +122,18 @@ Midas UMC22 and the user's own presets.
 - Flatpak using the Flathub LinuxAudio extensions for LSP, ZAM, Calf, MDA and bs2b; bs2b also
   enables Crossfeed, which Fedora cannot. Bundle filter-chain and lilv inside the sandbox.
 
+## Output routing (after M2)
+- Every app sees the surround layout: Skitz Effects' sink is the default, named after the device
+  ("Dali IO6 Analog Stereo · 7.1 Surround"); choosing a real device in GNOME still switches to it.
+- Streams that open with two channels or fewer move to a stereo sink whose chain has the effects
+  but no HRIR or surround mix; streams with more channels stay on the surround sink. Both chains
+  run as two filter-chain modules in one process.
+- The HRIR convolvers use only the first 2048 samples of the HRIR (99.99% of its energy), with the
+  tail threshold beyond that, so their work is even across cycles.
+- Hardware quirks stay outside the app. The Dali headset glitches whenever PipeWire changes its
+  rate or block size at runtime, which game alt-tabs did by changing the latency they ask for. The
+  user's startup script fixes the clock at 96 kHz and a 1024 quantum.
+
 ## Risks and open questions
 - Easy Effects 8 may change its preset keys (for example, IR paths); `plugins.py` mappings may need
   per-version aliases.
