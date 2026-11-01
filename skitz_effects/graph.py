@@ -192,6 +192,13 @@ def config_text(description, graph, inputs, outputs, capture, playback):
     return json.dumps(conf, indent=2)
 
 
+def without_realtime(text):
+    """The same config with no realtime priority for the chain's audio thread."""
+    conf = json.loads(text)
+    conf["context.modules"] = [m for m in conf["context.modules"] if m["name"] != "libpipewire-module-rt"]
+    return json.dumps(conf, indent=2)
+
+
 def channels(positions):
     return {"audio.channels": len(positions), "audio.position": list(positions)}
 

@@ -93,6 +93,7 @@ class Pipeline(GObject.Object):
         self._proc = None
         self._started = 0.0
         self._failures = 0
+        self._realtime = True
         self._missing_since = 0.0
         self._conf = ""
         self._save_id = 0
@@ -315,6 +316,10 @@ class Pipeline(GObject.Object):
         return False
 
     def _build(self, device):
+        route, conf = self._build_config(device)
+        return route, conf if self._realtime else graph.without_realtime(conf)
+
+    def _build_config(self, device):
         enabled = self.state["enabled"]
         if self.direction == "input":
             channel = self.state["device_channels"].get(device.name, "")
@@ -352,8 +357,15 @@ class Pipeline(GObject.Object):
         proc.returncode = status
         if proc is self._proc:
             self._proc = None
-            self._failures += 1
             print(f"skitz-effects: {self.direction} filter-chain exited with status {status}")
+            if self._realtime and os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL:
+                # The kernel kills a realtime thread that runs past RLIMIT_RTTIME without sleeping,
+                # which the HRIR chain can do while the graph reconfigures, such as when a game
+                # pauses its audio. It keeps up fine at normal priority.
+                self._realtime = False
+                print(f"skitz-effects: {self.direction} filter-chain now runs without realtime priority")
+            else:
+                self._failures += 1
             self.emit("state-changed")
             self.queue_rebuild()
 

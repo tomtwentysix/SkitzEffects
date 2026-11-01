@@ -186,3 +186,11 @@ def test_mono_profile_records_only_its_mono_channel(ee_root, lv2):
     assert args["filter.graph"]["inputs"] == ["in_l:In", None]
     assert args["filter.graph"]["outputs"] == ["in_l:Out", "in_l:Out"]
     assert args["capture.props"]["audio.position"] == ["MONO", "AUX1"]
+
+
+def test_without_realtime_drops_only_the_rt_module():
+    text = graph.build(None, True, "passthrough", "stereo", HRIR, TARGET)
+    names = [m["name"] for m in json.loads(text)["context.modules"]]
+    stripped = [m["name"] for m in json.loads(graph.without_realtime(text))["context.modules"]]
+    assert "libpipewire-module-rt" in names
+    assert stripped == [n for n in names if n != "libpipewire-module-rt"]

@@ -68,11 +68,18 @@ class SkitzEffectsWindow(Adw.ApplicationWindow):
             pipeline.connect("state-changed", self._on_state_changed)
         self.controller.connect("conflicts-changed", lambda *_: self._update_banner())
         self.controller.connect("devices-changed", lambda *_: self._update_device_label())
-        # Metering only runs while the window is on screen.
-        self.connect("map", lambda *_: self.meters.start())
-        self.connect("unmap", lambda *_: self.meters.stop())
+        # Metering only runs while the window can be seen: GNOME suspends a window that is minimised,
+        # on another workspace or covered, such as by a fullscreen game.
+        for signal in ("map", "unmap", "notify::suspended"):
+            self.connect(signal, lambda *_: self._update_meters())
         self._on_page_changed()
         self._update_banner()
+
+    def _update_meters(self):
+        if self.get_mapped() and not self.is_suspended():
+            self.meters.start()
+        else:
+            self.meters.stop()
 
     def toast(self, text):
         self.toasts.add_toast(Adw.Toast(title=text))
