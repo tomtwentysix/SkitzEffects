@@ -45,3 +45,10 @@ def test_streams_aimed_at_easy_effects_come_through_skitz_effects():
     assert routable(loopback)
     assert routable({"node.name": "obs-mic", "target.object": "easyeffects_source"})
     assert not routable({"node.name": "skitz_output", "target.object": "easyeffects_sink"})
+
+
+def test_allowed_rates_gain_pinned_rates():
+    from skitz_effects.pipewire import merged_rates
+    assert merged_rates("[ 48000 ]", {48000, 96000}) == [48000, 96000]
+    assert merged_rates("[ 44100 48000 96000 ]", {48000, 96000}) is None
+    assert merged_rates(None, {96000}) == [96000]

@@ -1,6 +1,7 @@
 """Live view of PipeWire's devices and defaults, fed by `pw-dump --monitor`."""
 
 import json
+import re
 import time
 from dataclasses import dataclass
 
@@ -58,6 +59,17 @@ def layout_name(positions, channels):
     if channels in (6, 8) and positions and "LFE" not in positions:
         return f"{channels} channels"
     return named.get(channels, f"{channels} channels")
+
+
+def merged_rates(current, rates):
+    """clock.allowed-rates with `rates` added, or None when it already has them.
+
+    The setting comes through as text such as "[ 48000 ]".
+    """
+    have = {int(r) for r in re.findall(r"\d+", current)} if isinstance(current, str) else set(current or ())
+    if set(rates) <= have:
+        return None
+    return sorted(have | set(rates))
 
 
 def run(argv):
@@ -302,6 +314,17 @@ class PipeWire(GObject.Object):
 
     def set_profile(self, card_id, index):
         run(["wpctl", "set-profile", str(card_id), str(index)])
+
+    def allow_rates(self, rates):
+        """Lets the graph run at these rates, so it follows a device pinned to one instead of
+        resampling against it; a 96 kHz device under a 48 kHz graph starves the HRIR chain."""
+        entries = next((e for oid, e in self.metadata.items()
+                        if self.objects.get(oid, {}).get("props", {}).get("metadata.name") == "settings"), None)
+        if entries is None:
+            return
+        wanted = merged_rates(entries.get((0, "clock.allowed-rates"), "[ 48000 ]"), rates)
+        if wanted and self._once("rates", tuple(wanted)):
+            run(["pw-metadata", "-n", "settings", "0", "clock.allowed-rates", f"[ {' '.join(map(str, wanted))} ]"])
 
     def set_default(self, name):
         oid = self.node_id(name)
