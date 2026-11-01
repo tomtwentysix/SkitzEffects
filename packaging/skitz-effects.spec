@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.2
+Version:        1.0.3
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.3-1
+- Every app sees the surround layout: the default output is Skitz Effects' sink, named after the device it plays through.
+- Streams aimed at Easy Effects, such as loopbacks set up for it, go through Skitz Effects.
+- dnf checks the COPR for updates every 4 hours instead of 48.
+
 * Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.2-1
 - Preferences: start at login, start minimised, keep running in the background, show in the system tray.
 - Tray icon with Open, an effects switch and Quit (needs a StatusNotifier host, such as GNOME's AppIndicator extension).
