@@ -51,6 +51,15 @@ def _positions(info):
     return tuple(position or ())
 
 
+def layout_name(positions, channels):
+    """A short name for a stream's channel layout, such as "Stereo" or "7.1"."""
+    channels = len(positions) or channels
+    named = {1: "Mono", 2: "Stereo", 6: "5.1", 8: "7.1"}
+    if channels in (6, 8) and positions and "LFE" not in positions:
+        return f"{channels} channels"
+    return named.get(channels, f"{channels} channels")
+
+
 def run(argv):
     try:
         Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
@@ -221,6 +230,11 @@ class PipeWire(GObject.Object):
             props = info.get("props", {})
             if props.get("media.class") == media_class:
                 yield oid, props
+
+    def layout(self, oid):
+        """A node's channel layout name; streams report theirs as soon as their format is set."""
+        info = (self.objects.get(oid) or {}).get("info") or {}
+        return layout_name(_positions(info), _channels(info))
 
     def default(self, media_class):
         # The configured default is the user's choice. WirePlumber's effective default also

@@ -85,3 +85,14 @@ def test_levels_rise_at_once_and_fall_steadily():
     assert out[0] == -20.0
     assert out[1] == -10.0 - levels.RELEASE * 0.5
     assert levels.smooth(np.array([-89.0]), np.array([-90.0]), 10)[0] == levels.FLOOR
+
+
+def test_layout_names():
+    from skitz_effects.pipewire import layout_name
+    assert layout_name(("FL", "FR"), 2) == "Stereo"
+    assert layout_name(("MONO",), 1) == "Mono"
+    assert layout_name(("FL", "FR", "FC", "LFE", "RL", "RR"), 6) == "5.1"
+    assert layout_name(("FL", "FR", "FC", "LFE", "RL", "RR", "SL", "SR"), 8) == "7.1"
+    assert layout_name((), 8) == "7.1"
+    assert layout_name(tuple(f"AUX{i}" for i in range(8)), 8) == "8 channels"
+    assert layout_name(("FL", "FR", "RL", "RR"), 4) == "4 channels"

@@ -11,6 +11,8 @@ ICONS = {"output": ("audio-volume-high-symbolic", "audio-volume-muted-symbolic")
 class AppRow(Adw.ActionRow):
     def __init__(self, controller, pipeline, oid, props):
         super().__init__()
+        self.controller = controller
+        self.oid = oid
         self.pipeline = pipeline
         self.props_ = props
         self.icon = Gtk.Image(icon_name="application-x-executable-symbolic", pixel_size=32)
@@ -25,7 +27,9 @@ class AppRow(Adw.ActionRow):
     def update(self, props):
         self.props_ = props
         self.set_title(GLib.markup_escape_text(props.get("application.name") or props.get("node.name", "")))
-        self.set_subtitle(GLib.markup_escape_text(props.get("media.name", "")))
+        # Games often switch to 5.1 or 7.1 once their audio starts, so this follows each update.
+        details = [props.get("media.name", ""), self.controller.pw.layout(self.oid)]
+        self.set_subtitle(GLib.markup_escape_text(" · ".join(d for d in details if d)))
         self.icon.set_from_icon_name(props.get("application.icon-name") or "application-x-executable-symbolic")
         on = not self.pipeline.blocked(props)
         if self.effects.get_active() != on:
