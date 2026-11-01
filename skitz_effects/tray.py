@@ -28,6 +28,7 @@ INTERFACES = Gio.DBusNodeInfo.new_for_xml("""
     <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
     <method name="ContextMenu"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
     <method name="Scroll"><arg type="i" direction="in"/><arg type="s" direction="in"/></method>
+    <method name="ProvideXdgActivationToken"><arg type="s" direction="in"/></method>
     <signal name="NewIcon"/>
     <signal name="NewTitle"/>
     <signal name="NewStatus"><arg type="s"/></signal>
@@ -118,6 +119,7 @@ class Tray:
         self.app = app
         self.bus = app.get_dbus_connection()
         self.revision = 1
+        self._token = None
         self.properties = item_properties(f"{ICON_NAME}-symbolic", icon_theme_path)
         item, menu = INTERFACES.interfaces
         self._registrations = [
@@ -155,8 +157,11 @@ class Tray:
         return MENU_PROPERTIES.get(name)
 
     def _on_item_call(self, bus, sender, path, interface, method, params, invocation):
-        if method in ("Activate", "SecondaryActivate"):
-            self.app.activate_action("show", None)
+        # Hosts send a token before Activate and menu clicks; without one, Wayland will not raise the window.
+        if method == "ProvideXdgActivationToken":
+            (self._token,) = params.unpack()
+        elif method in ("Activate", "SecondaryActivate"):
+            self._show()
         invocation.return_value(None)
 
     def _on_menu_call(self, bus, sender, path, interface, method, params, invocation):
@@ -200,8 +205,14 @@ class Tray:
 
     def _clicked(self, item_id):
         if item_id == OPEN:
-            self.app.activate_action("show", None)
+            self._show()
         elif item_id == EFFECTS:
             self.app.change_action_state("effects", GLib.Variant("b", not self._effects_on()))
         elif item_id == QUIT:
             self.app.activate_action("quit", None)
+
+    def _show(self):
+        if self._token:
+            self.app.window().set_startup_id(self._token)
+            self._token = None
+        self.app.activate_action("show", None)
