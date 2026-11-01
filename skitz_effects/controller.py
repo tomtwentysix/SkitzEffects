@@ -432,7 +432,6 @@ class Controller(GObject.Object):
         self.output = Pipeline(self, "output")
         self.input = Pipeline(self, "input")
         self._devices = ()
-        self._rates = set()
 
     @property
     def pipelines(self):
@@ -442,7 +441,6 @@ class Controller(GObject.Object):
         if self.running:
             return
         self.running = True
-        self._load_rates()
         self.pw = PipeWire()
         self.pw.connect("changed", self._on_pipewire)
 
@@ -458,18 +456,10 @@ class Controller(GObject.Object):
         return presets.wav_channels(self.settings.hrir) == 14
 
     def restart_chains(self):
-        self._load_rates()
         for pipeline in self.pipelines:
             pipeline.restart()
 
-    def _load_rates(self):
-        """Sample rates pinned in Device Settings, which the graph has to be allowed to run at."""
-        rates = {props[names.RATE] for props in names.rules().values() if names.RATE in props}
-        self._rates = rates | {48000} if rates else set()
-
     def _on_pipewire(self, pw):
-        if self._rates:
-            pw.allow_rates(self._rates)
         devices = tuple((d.name, d.description, d.channels) for p in self.pipelines for d in p.devices())
         if devices != self._devices:
             self._devices = devices
