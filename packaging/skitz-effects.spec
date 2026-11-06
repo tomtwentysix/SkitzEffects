@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.6
+Version:        1.0.7
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Fri Nov 06 2026 Tom <tom@solarflareit.co.uk> - 1.0.7-1
+- The effects run at a raised normal priority (nice -11) instead of realtime, so they can no longer
+  hold up a game's threads or be stopped by the kernel for overrunning their realtime budget.
+- An effects chain restarts by itself when its device changes sample rate, instead of going silent.
+- Add the Expander effect, using the LSP sidechain expander and Easy Effects' expander settings.
+
 * Sun Nov 01 2026 Tom <tom@solarflareit.co.uk> - 1.0.6-1
 - Stereo apps take their own path through the effects, without the HRIR or a surround mix; 7.1 apps
   still go through the HRIR on stereo devices.
