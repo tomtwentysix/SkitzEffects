@@ -21,6 +21,8 @@ class Device:
     # The sound card's own name, such as "Midas UMC22", and its PipeWire id.
     card: str = ""
     card_id: int | None = None
+    # The rate the device is running at, or 0 while it is suspended.
+    rate: int = 0
 
 
 def _channels(info):
@@ -49,6 +51,13 @@ def _positions(info):
         for fmt in info.get("params", {}).get("Format") or []:
             position = fmt.get("position")
     return tuple(position or ())
+
+
+def _rate(info):
+    for fmt in info.get("params", {}).get("Format") or []:
+        if isinstance(fmt.get("rate"), int):
+            return fmt["rate"]
+    return 0
 
 
 def layout_name(positions, channels):
@@ -284,7 +293,7 @@ class PipeWire(GObject.Object):
             card = ((self.objects.get(card_id) or {}).get("info") or {}).get("props", {})
             out.append(Device(oid, name, props.get("node.description") or name, _channels(info),
                               int(props.get("priority.session", 0)), bool(props.get("node.virtual")),
-                              _positions(info), card.get("device.description", ""), card_id))
+                              _positions(info), card.get("device.description", ""), card_id, _rate(info)))
         return sorted(out, key=lambda d: (d.virtual, -d.priority, d.description.casefold()))
 
     def linked(self, out_name, in_name):

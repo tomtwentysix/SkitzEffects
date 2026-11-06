@@ -80,3 +80,16 @@ def test_streams_take_the_stereo_path_once_they_turn_out_stereo():
     assert targets == {1: "skitz_stereo", 2: "skitz_sink", 3: "skitz_sink", 4: "skitz_stereo"}
     pipeline.has_stereo_sink = lambda: False
     assert Pipeline._target(pipeline, 1) == "skitz_sink"
+
+
+def sink(oid, name, fmt):
+    return {"id": oid, "type": "PipeWire:Interface:Node",
+            "info": {"props": {"media.class": "Audio/Sink", "node.name": name}, "params": {"Format": fmt}}}
+
+
+def test_a_device_reports_the_rate_it_runs_at():
+    pw = model()
+    pw._apply([sink(53, "dali", [{"rate": 96000, "channels": 2}])])
+    assert pw.devices("Audio/Sink")[0].rate == 96000
+    pw._apply([sink(53, "dali", [])])
+    assert pw.devices("Audio/Sink")[0].rate == 0

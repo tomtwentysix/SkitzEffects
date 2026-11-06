@@ -5,16 +5,66 @@ import os
 import signal
 import subprocess
 import time
+from pathlib import Path
 
-from gi.repository import GLib, GObject
+from gi.repository import Gio, GLib, GObject
 
 from . import config, deps, graph, names, plugins, presets
 from .config import LAYOUTS
 from .pipewire import PipeWire
 
 PR_SET_PDEATHSIG = 1
+# PipeWire's own fallback when realtime is unavailable; RTKit allows down to -15.
+NICE_LEVEL = -11
 # Seconds a chosen device may be gone before another one stands in for it.
 MISSING_GRACE = 5
+
+
+def data_loop_threads(pid):
+    try:
+        tasks = list(Path(f"/proc/{pid}/task").iterdir())
+    except OSError:
+        return []
+    out = []
+    for task in tasks:
+        try:
+            if (task / "comm").read_text().startswith("data-loop"):
+                out.append(int(task.name))
+        except OSError:
+            continue
+    return out
+
+
+def raise_priority(proc):
+    """Asks RTKit to run the chain's audio threads at nice NICE_LEVEL.
+
+    Realtime would let the HRIR chain preempt games, and the kernel kills a
+    realtime thread that runs too long (RLIMIT_RTTIME). A raised nice level
+    keeps it ahead of ordinary work without either risk.
+    """
+    if proc.returncode is not None:
+        return False
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+    except GLib.Error:
+        return False
+    for tid in data_loop_threads(proc.pid):
+        bus.call("org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1", "org.freedesktop.RealtimeKit1",
+                 "MakeThreadHighPriorityWithPID", GLib.Variant("(tti)", (proc.pid, tid, NICE_LEVEL)),
+                 None, Gio.DBusCallFlags.NONE, -1, None, _on_priority_set)
+    return False
+
+
+def _on_priority_set(bus, result):
+    try:
+        bus.call_finish(result)
+    except GLib.Error as e:
+        print(f"skitz-effects: could not raise the effects' priority: {e.message}")
+
+
+def rate_changed(started_at, rate):
+    """Whether a device now runs at a different rate from the one its chain started with."""
+    return bool(started_at and rate and rate != started_at)
 
 
 def input_variants(profiles, current):
@@ -93,8 +143,9 @@ class Pipeline(GObject.Object):
         self._proc = None
         self._started = 0.0
         self._failures = 0
-        self._realtime = True
         self._missing_since = 0.0
+        self._rate = 0
+        self._rate_restart_id = 0
         self._conf = ""
         self._save_id = 0
         self._rebuild_id = 0
@@ -205,6 +256,7 @@ class Pipeline(GObject.Object):
             if not pw.linked(graph.MIC_PLAYBACK, self.virtual):
                 pw.link(graph.MIC_PLAYBACK, self.virtual)
         self._check_chain()
+        self._check_rate()
         self._route_streams()
         self.queue_rebuild()
 
@@ -336,19 +388,17 @@ class Pipeline(GObject.Object):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(conf)
         self._stop_chain()
+        self._rate = 0
         self._proc = subprocess.Popen(["pipewire", "-c", str(path)], preexec_fn=_die_with_parent,
                                       stdin=subprocess.DEVNULL)
         self._started = time.monotonic()
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, self._proc.pid, self._on_chain_exit, self._proc)
+        GLib.timeout_add(300, raise_priority, self._proc)
         GLib.timeout_add_seconds(3, self._check_chain)
         self.emit("state-changed")
         return False
 
     def _build(self, device):
-        route, conf = self._build_config(device)
-        return route, conf if self._realtime else graph.without_realtime(conf)
-
-    def _build_config(self, device):
         enabled = self.state["enabled"]
         if self.direction == "input":
             channel = self.state["device_channels"].get(device.name, "")
@@ -360,6 +410,26 @@ class Pipeline(GObject.Object):
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
         return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name)
+
+    def _check_rate(self):
+        """Restarts the chain when its device changes rate under it.
+
+        The convolvers and LV2 plugins are set up for the rate the chain starts
+        at, and output silence once the graph runs at another.
+        """
+        rate = self.device.rate if self.device else 0
+        if not self.chain_running or not rate:
+            return
+        if rate_changed(self._rate, rate) and not self._rate_restart_id:
+            print(f"skitz-effects: {self.direction} device moved from {self._rate} to {rate} Hz, restarting")
+            # Rate changes come in bursts while the graph settles, so restart once it has.
+            self._rate_restart_id = GLib.timeout_add(1000, self._restart_for_rate)
+        self._rate = rate
+
+    def _restart_for_rate(self):
+        self._rate_restart_id = 0
+        self.restart()
+        return False
 
     def _check_chain(self):
         """Restarts a chain whose streams were torn down while its process lives on.
@@ -387,14 +457,7 @@ class Pipeline(GObject.Object):
         if proc is self._proc:
             self._proc = None
             print(f"skitz-effects: {self.direction} filter-chain exited with status {status}")
-            if self._realtime and os.WIFSIGNALED(status) and os.WTERMSIG(status) == signal.SIGKILL:
-                # The kernel kills a realtime thread that runs past RLIMIT_RTTIME without sleeping,
-                # which the HRIR chain can do while the graph reconfigures, such as when a game
-                # pauses its audio. It keeps up fine at normal priority.
-                self._realtime = False
-                print(f"skitz-effects: {self.direction} filter-chain now runs without realtime priority")
-            else:
-                self._failures += 1
+            self._failures += 1
             self.emit("state-changed")
             self.queue_rebuild()
 

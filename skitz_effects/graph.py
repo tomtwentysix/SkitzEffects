@@ -201,20 +201,12 @@ def config_text(*modules):
         "context.spa-libs": {"audio.convert.*": "audioconvert/libspa-audioconvert",
                              "support.*": "support/libspa-support"},
         "context.modules": [
-            {"name": "libpipewire-module-rt", "flags": ["ifexists", "nofail"]},
             {"name": "libpipewire-module-protocol-native"},
             {"name": "libpipewire-module-client-node"},
             {"name": "libpipewire-module-adapter"},
             *modules,
         ],
     }
-    return json.dumps(conf, indent=2)
-
-
-def without_realtime(text):
-    """The same config with no realtime priority for the chain's audio thread."""
-    conf = json.loads(text)
-    conf["context.modules"] = [m for m in conf["context.modules"] if m["name"] != "libpipewire-module-rt"]
     return json.dumps(conf, indent=2)
 
 

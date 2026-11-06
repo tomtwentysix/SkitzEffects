@@ -293,6 +293,23 @@ EFFECTS = {
             ) + sidechain("sct", ("Feed-forward", "Feed-back", "External", "Link")) + sidechain_filters(),
         ),
         Effect(
+            "expander", "Expander", LSP + "sc_expander_stereo", "lsp-plugins.lv2", "lsp-plugins-lv2",
+            params=gains() + sidechain_mix() + (
+                Param("mode", "em", "enum", ("Down", "Up"), "Mode"),
+                Param("threshold", "al", "db", label="Threshold", lo=-60, hi=0, step=0.1, unit="dB"),
+                Param("ratio", "er", label="Ratio", lo=1, hi=100, step=0.1, digits=1),
+                Param("knee", "kn", "db", label="Knee", lo=-24, hi=0, step=0.1, unit="dB"),
+                Param("attack", "at", label="Attack", hi=2000, step=0.1, unit="ms"),
+                Param("release", "rt", label="Release", hi=5000, step=1, unit="ms", digits=0),
+                Param("release-threshold", "rrl", "db", label="Release threshold", lo=-80.01, hi=0, step=0.1,
+                      unit="dB"),
+                Param("hold", "hold", label="Hold", hi=1000, unit="ms", digits=0),
+                Param("makeup", "mk", "db", label="Makeup", lo=-60, hi=60, step=0.1, unit="dB"),
+                Param("dry", "cdr", "db", label="Dry", lo=-80.01, hi=20, step=0.1, unit="dB"),
+                Param("wet", "cwt", "db", label="Wet", lo=-80.01, hi=20, step=0.1, unit="dB"),
+            ) + sidechain("sci", ("Internal", "External", "Link")) + sidechain_filters(),
+        ),
+        Effect(
             "gate", "Gate", LSP + "sc_gate_stereo", "lsp-plugins.lv2", "lsp-plugins-lv2",
             params=gains() + sidechain_mix() + (
                 Param("curve-threshold", "gt", "db", label="Threshold", lo=-60, hi=0, step=0.1, unit="dB"),
@@ -397,7 +414,6 @@ for _kind, _title, _missing in (
     ("crystalizer", "Crystalizer", "This effect is built into Easy Effects and has no plugin"),
     ("delay", "Delay", "Not supported yet"),
     ("filter", "Filter", "Not supported yet"),
-    ("expander", "Expander", "Not supported yet"),
     ("multiband_gate", "Multiband Gate", "Not supported yet"),
     ("pitch", "Pitch", "Not supported yet"),
     ("level_meter", "Level Meter", "Not supported yet"),

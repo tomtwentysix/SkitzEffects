@@ -64,6 +64,15 @@ def test_old_enum_names_are_aliased(ee_root):
     assert plugins.Param("x", "x", "enum", ("A", "B")).control("C") is None
 
 
+def test_expander_maps_easy_effects_defaults():
+    controls = plugins.effect("expander").controls(presets.DEFAULTS["expander"])
+    assert controls["em"] == 1  # Upward, as LSP's "Up"
+    assert controls["er"] == 4.0
+    assert controls["al"] == pytest.approx(graph.db(-12.0))
+    assert controls["sci"] == 0
+    assert controls["scm"] == 1
+
+
 def test_ports_are_unique_per_effect():
     for effect in plugins.EFFECTS.values():
         ports = [p.port for p in effect.params if p.port]

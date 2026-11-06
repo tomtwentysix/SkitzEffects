@@ -105,7 +105,7 @@ Midas UMC22 and the user's own presets.
   input profile (stereo, input 1, input 2, mono mix), and Skitz Effects follows the renamed node.
 - Done: the header's menu picks the device for the page shown; presets moved to the top of the
   effects sidebar.
-- More effects with packaged plugins: filter, delay, expander, multiband gate (LSP), the Calf
+- More effects with packaged plugins: filter, delay, multiband gate (LSP), the Calf
   effects (`lv2-calf-plugins`: bass enhancer, exciter, stereo tools, reverb, deesser), and echo
   cancellation on input via PipeWire's own echo-cancel module.
 

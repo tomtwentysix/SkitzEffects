@@ -1,4 +1,6 @@
-from skitz_effects.controller import input_variants, routable
+import os
+
+from skitz_effects.controller import data_loop_threads, input_variants, rate_changed, routable
 
 UMC22 = [
     (0, "off"),
@@ -13,6 +15,18 @@ UMC22 = [
     (9, "input:analog-mono"),
     (10, "pro-audio"),
 ]
+
+
+def test_rate_changed_only_between_two_known_rates():
+    assert rate_changed(96000, 48000)
+    assert not rate_changed(96000, 96000)
+    # 0 is a suspended device, or a chain that has not seen its device run yet.
+    assert not rate_changed(0, 48000)
+    assert not rate_changed(96000, 0)
+
+
+def test_data_loop_threads_of_a_process_without_any():
+    assert data_loop_threads(os.getpid()) == []
 
 
 def test_input_variants_keep_the_output_side():
