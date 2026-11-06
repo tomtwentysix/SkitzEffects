@@ -303,6 +303,12 @@ class PipeWire(GObject.Object):
                    and (obj.get("info") or {}).get("input-node-id") == in_id
                    for obj in self.objects.values())
 
+    def links_from(self, oid):
+        """Ids of the nodes one node's output is linked to."""
+        return {(obj.get("info") or {}).get("input-node-id") for obj in self.objects.values()
+                if obj.get("type") == "PipeWire:Interface:Link"
+                and (obj.get("info") or {}).get("output-node-id") == oid}
+
     def link(self, out_name, in_name):
         """Links every port of one node to the next, passively, and keeps the links after pw-link exits."""
         if self._once("link", (out_name, in_name)):

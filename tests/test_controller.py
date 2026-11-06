@@ -1,6 +1,6 @@
 import os
 
-from skitz_effects.controller import data_loop_threads, input_variants, rate_changed, routable
+from skitz_effects.controller import RELINK_WAIT, data_loop_threads, input_variants, rate_changed, routable, stuck
 
 UMC22 = [
     (0, "off"),
@@ -59,3 +59,11 @@ def test_streams_aimed_at_easy_effects_come_through_skitz_effects():
     assert routable(loopback)
     assert routable({"node.name": "obs-mic", "target.object": "easyeffects_source"})
     assert not routable({"node.name": "skitz_output", "target.object": "easyeffects_sink"})
+
+
+def test_a_stream_is_stuck_only_once_it_has_had_time_to_move():
+    assert stuck({93}, 141, RELINK_WAIT)
+    assert not stuck({93}, 141, RELINK_WAIT - 1)
+    assert not stuck({141}, 141, RELINK_WAIT)
+    assert not stuck(set(), 141, RELINK_WAIT)
+    assert not stuck({93}, None, RELINK_WAIT)

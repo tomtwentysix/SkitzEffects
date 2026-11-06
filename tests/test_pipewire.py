@@ -42,13 +42,15 @@ def test_a_closed_stream_leaves_nothing_for_the_next_one_with_its_id():
     assert pw.stream_target(347) == ""
 
 
-def route(streams, targets, blocked=(), running=True):
+def route(streams, targets, blocked=(), running=True, links=None):
     moves = []
+    ids = {"skitz_sink": 93, "skitz_stereo": 141}
     pw = SimpleNamespace(streams=lambda _cls: streams.items(), stream_target=lambda oid: targets.get(oid, ""),
-                         move=lambda oid, to: moves.append((oid, to)))
+                         move=lambda oid, to: moves.append((oid, to)), node_id=ids.get,
+                         links_from=lambda oid: (links or {}).get(oid, set()))
     pipeline = SimpleNamespace(pw=pw, stream_class="Stream/Output/Audio", virtual="skitz_sink",
                                chain_running=running, blocked=lambda props: props["application.name"] in blocked,
-                               _target=lambda oid: "skitz_sink")
+                               _target=lambda oid: "skitz_sink", _moves={})
     Pipeline._route_streams(pipeline)
     return moves
 
@@ -65,6 +67,13 @@ def test_streams_left_out_in_the_mixer_return_to_the_device():
     streams = {1: {"application.name": "Discord", "node.name": "Discord"},
                2: {"application.name": "Chat", "node.name": "Chat"}}
     assert route(streams, {1: "skitz_sink", 2: "headset"}, blocked=("Discord", "Chat")) == [(1, "")]
+
+
+def test_a_stream_wireplumber_failed_to_move_is_sent_again():
+    streams = {1: {"application.name": "Firefox", "node.name": "Firefox"},
+               2: {"application.name": "mpv", "node.name": "mpv"}}
+    moves = route(streams, {1: "skitz_sink", 2: "skitz_sink"}, links={1: {141}, 2: {93}})
+    assert moves == [(1, "")]
 
 
 def test_streams_wait_on_the_device_while_the_chain_is_down():

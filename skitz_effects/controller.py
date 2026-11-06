@@ -2,6 +2,7 @@
 
 import ctypes
 import os
+import resource
 import signal
 import subprocess
 import time
@@ -14,10 +15,17 @@ from .config import LAYOUTS
 from .pipewire import PipeWire
 
 PR_SET_PDEATHSIG = 1
+# RTKit's ceiling, which PipeWire's own data loops and every other client also get.
+RT_PRIORITY = 20
+# RTKit only grants realtime to processes that limit it to at most this many microseconds.
+RT_TIME_LIMIT = 200000
 # PipeWire's own fallback when realtime is unavailable; RTKit allows down to -15.
 NICE_LEVEL = -11
 # Seconds a chosen device may be gone before another one stands in for it.
 MISSING_GRACE = 5
+# Seconds WirePlumber gets to relink a moved stream, and how often a stream is sent again.
+RELINK_WAIT = 3
+RELINK_TRIES = 3
 
 
 def data_loop_threads(pid):
@@ -35,12 +43,11 @@ def data_loop_threads(pid):
     return out
 
 
-def raise_priority(proc):
-    """Asks RTKit to run the chain's audio threads at nice NICE_LEVEL.
+def raise_priority(proc, realtime):
+    """Asks RTKit to run the chain's audio threads realtime, or at nice NICE_LEVEL.
 
-    Realtime would let the HRIR chain preempt games, and the kernel kills a
-    realtime thread that runs too long (RLIMIT_RTTIME). A raised nice level
-    keeps it ahead of ordinary work without either risk.
+    A nice level is not enough while a game keeps every core busy: the chain
+    misses cycles and the output pops, which Easy Effects avoids by running realtime.
     """
     if proc.returncode is not None:
         return False
@@ -49,9 +56,12 @@ def raise_priority(proc):
     except GLib.Error:
         return False
     for tid in data_loop_threads(proc.pid):
+        if realtime:
+            method, args = "MakeThreadRealtimeWithPID", GLib.Variant("(ttu)", (proc.pid, tid, RT_PRIORITY))
+        else:
+            method, args = "MakeThreadHighPriorityWithPID", GLib.Variant("(tti)", (proc.pid, tid, NICE_LEVEL))
         bus.call("org.freedesktop.RealtimeKit1", "/org/freedesktop/RealtimeKit1", "org.freedesktop.RealtimeKit1",
-                 "MakeThreadHighPriorityWithPID", GLib.Variant("(tti)", (proc.pid, tid, NICE_LEVEL)),
-                 None, Gio.DBusCallFlags.NONE, -1, None, _on_priority_set)
+                 method, args, None, Gio.DBusCallFlags.NONE, -1, None, _on_priority_set)
     return False
 
 
@@ -60,6 +70,11 @@ def _on_priority_set(bus, result):
         bus.call_finish(result)
     except GLib.Error as e:
         print(f"skitz-effects: could not raise the effects' priority: {e.message}")
+
+
+def stuck(linked, target_id, waited):
+    """Whether a stream sent to target_id a while ago is still linked somewhere else."""
+    return bool(linked) and target_id is not None and target_id not in linked and waited >= RELINK_WAIT
 
 
 def rate_changed(started_at, rate):
@@ -119,6 +134,11 @@ def _die_with_parent():
     ctypes.CDLL("libc.so.6").prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
 
 
+def _start_chain():
+    _die_with_parent()
+    resource.setrlimit(resource.RLIMIT_RTTIME, (RT_TIME_LIMIT, RT_TIME_LIMIT))
+
+
 class Pipeline(GObject.Object):
     """One direction: output (apps -> sink -> effects -> speakers) or input (mic -> effects -> source -> apps)."""
 
@@ -143,6 +163,9 @@ class Pipeline(GObject.Object):
         self._proc = None
         self._started = 0.0
         self._failures = 0
+        self._realtime = True
+        # Stream id -> (when it was last sent, how often it has been sent again).
+        self._moves = {}
         self._missing_since = 0.0
         self._rate = 0
         self._rate_restart_id = 0
@@ -292,16 +315,29 @@ class Pipeline(GObject.Object):
         goes back to the default only if Skitz Effects had sent it here.
         """
         pw = self.pw
+        now = time.monotonic()
+        seen = set()
         for oid, props in pw.streams(self.stream_class):
             if not routable(props):
                 continue
+            seen.add(oid)
             current = pw.stream_target(oid)
             if self.chain_running and not self.blocked(props):
                 target = self._target(oid)
+                sent, tries = self._moves.get(oid, (0.0, 0))
                 if current != target:
                     pw.move(oid, target)
+                    self._moves[oid] = (now, tries)
+                    GLib.timeout_add_seconds(RELINK_WAIT + 1, lambda: self._route_streams() or False)
+                elif tries < RELINK_TRIES and stuck(pw.links_from(oid), pw.node_id(target), now - sent):
+                    # WirePlumber sometimes fails to relink a playing stream ("links failed to
+                    # activate") and leaves it where it was, and only acts again when the target changes.
+                    print(f"skitz-effects: stream {oid} did not move to {target}, sending it again")
+                    pw.move(oid, "")
+                    self._moves[oid] = (now, tries + 1)
             elif current in (self.virtual, graph.STEREO_SINK):
                 pw.move(oid, "")
+        self._moves = {oid: m for oid, m in self._moves.items() if oid in seen}
 
     def blocked(self, props):
         """Apps left out of the effects, kept in the preset's blocklist as Easy Effects does."""
@@ -389,11 +425,11 @@ class Pipeline(GObject.Object):
         path.write_text(conf)
         self._stop_chain()
         self._rate = 0
-        self._proc = subprocess.Popen(["pipewire", "-c", str(path)], preexec_fn=_die_with_parent,
+        self._proc = subprocess.Popen(["pipewire", "-c", str(path)], preexec_fn=_start_chain,
                                       stdin=subprocess.DEVNULL)
         self._started = time.monotonic()
         GLib.child_watch_add(GLib.PRIORITY_DEFAULT, self._proc.pid, self._on_chain_exit, self._proc)
-        GLib.timeout_add(300, raise_priority, self._proc)
+        GLib.timeout_add(300, raise_priority, self._proc, self._realtime)
         GLib.timeout_add_seconds(3, self._check_chain)
         self.emit("state-changed")
         return False
@@ -457,6 +493,10 @@ class Pipeline(GObject.Object):
         if proc is self._proc:
             self._proc = None
             print(f"skitz-effects: {self.direction} filter-chain exited with status {status}")
+            if status == signal.SIGKILL and self._realtime:
+                # The kernel kills realtime threads that overrun RLIMIT_RTTIME.
+                print(f"skitz-effects: {self.direction} filter-chain now runs at nice {NICE_LEVEL}")
+                self._realtime = False
             self._failures += 1
             self.emit("state-changed")
             self.queue_rebuild()
