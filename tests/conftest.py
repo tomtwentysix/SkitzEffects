@@ -43,7 +43,16 @@ def write_wav(path, channels, rate=48000):
     return path
 
 
+def chain_modules(text):
+    modules = json.loads(text)["context.modules"]
+    return [m["args"] for m in modules if m["name"] == "libpipewire-module-filter-chain"]
+
+
 def chain_args(text, index=0):
     """The args of a generated config's filter-chain modules, the first by default."""
-    modules = json.loads(text)["context.modules"]
-    return [m["args"] for m in modules if m["name"] == "libpipewire-module-filter-chain"][index]
+    return chain_modules(text)[index]
+
+
+def chain_nodes(text):
+    """Every node of every step of a chain, by name."""
+    return {n["name"]: n for args in chain_modules(text) for n in args["filter.graph"]["nodes"]}

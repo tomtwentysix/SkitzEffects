@@ -7,6 +7,11 @@ that apps record from. A stereo
 effect chain with fewer inputs than the stream has channels is instantiated
 once per channel pair by filter-chain, which is how effects reach every
 speaker on a surround device.
+
+Each step of a chain (the HRIR downmix, then every effect) runs as a filter-chain
+of its own in the one process, played from one to the next, so the meters can
+tap the audio between steps: filter-chain keeps what passes between the nodes
+of one graph to itself.
 """
 
 import json
@@ -172,10 +177,64 @@ def effect_chain(preset, enabled):
     return chain
 
 
-def stereo_chain(graph, preset, enabled, left, right):
-    for effect_id, effect, settings in effect_chain(preset, enabled):
+def steps(preset, enabled, route):
+    """The steps of a chain, as [(tap, title)]; each one plays into the next through a stream of its own."""
+    taps = [("surround", "Surround Downmix")] if route == "hrir" else []
+    for effect_id, effect, _settings in effect_chain(preset, enabled):
+        index = int(effect_id.partition("#")[2] or 0)
+        taps.append((node_name(effect_id), effect.title + (f" {index + 1}" if index else "")))
+    return taps
+
+
+def stream_names(taps, capture, playback):
+    """Each step's (capture, playback) node names; the chain's own names are kept at its two ends."""
+    last = len(taps) - 1
+    return [(capture if i == 0 else f"{capture}.{tap}", playback if i == last else f"{playback}.{tap}")
+            for i, tap in enumerate(taps)] or [(capture, playback)]
+
+
+def joins(taps, capture, playback):
+    """The (output node, input node) pairs the controller links, from each step into the next."""
+    names = stream_names(taps, capture, playback)
+    return [(names[i][1], names[i + 1][0]) for i in range(len(names) - 1)]
+
+
+def control_node(taps, capture, playback, effect_id):
+    """The node whose Props hold an effect's controls."""
+    tap = node_name(effect_id)
+    return stream_names(taps, capture, playback)[taps.index(tap)][0] if tap in taps else capture
+
+
+def staged(entry, effects, separate):
+    """Splits a chain into its steps: the entry, then one per effect.
+
+    entry is (graph, inputs, left, right). The first effect joins the entry's graph unless the entry
+    is a step of its own, as the HRIR downmix is. Returns [(graph, inputs, outputs)].
+    """
+    graph, inputs, left, right = entry
+    effects = list(effects)
+    if not separate and effects:
+        effect_id, effect, settings = effects.pop(0)
         left, right = add_effect(graph, effect_id, effect, settings, left, right)
-    return [left, right]
+    stages = [(graph, inputs, [left, right])]
+    for effect_id, effect, settings in effects:
+        graph = Graph()
+        inputs, left, right = plain_inputs(graph)
+        stages.append((graph, inputs, list(add_effect(graph, effect_id, effect, settings, left, right))))
+    return stages
+
+
+def modules(description, stages, taps, capture, playback):
+    """One filter-chain per stage; the streams between stages carry the playback's channels."""
+    names = stream_names(taps, capture["node.name"], playback["node.name"])
+    inner = {k: playback[k] for k in ("audio.channels", "audio.position")}
+    out = []
+    for i, ((graph, inputs, outputs), (cap, play)) in enumerate(zip(stages, names)):
+        out.append(filter_chain(
+            description, graph, inputs, outputs,
+            capture if i == 0 else {"node.name": cap, "node.autoconnect": False, **inner},
+            playback if i == len(stages) - 1 else {"node.name": play, "node.autoconnect": False, **inner}))
+    return out
 
 
 def plain_inputs(graph):
@@ -222,11 +281,11 @@ def build(preset, enabled, route, layout, hrir, target):
         inputs, left, right = hrir_downmix(graph, layout, hrir)
     else:
         inputs, left, right = plain_inputs(graph)
-    outputs = stereo_chain(graph, preset, enabled, left, right)
+    stages = staged((graph, inputs, left, right), effect_chain(preset, enabled), route == "hrir")
     capture = LAYOUTS[layout] if route in ("passthrough", "hrir") else LAYOUTS["stereo"]
     playback = LAYOUTS[layout] if route == "passthrough" else LAYOUTS["stereo"]
-    return config_text(filter_chain(
-        "Skitz Effects Output", graph, inputs, outputs,
+    return config_text(*modules(
+        "Skitz Effects Output", stages, [tap for tap, _title in steps(preset, enabled, route)],
         {"node.name": CAPTURE, "target.object": SINK, "stream.capture.sink": True, **channels(capture)},
         {"node.name": PLAYBACK, "target.object": target, **channels(playback)},
     ))
@@ -245,9 +304,9 @@ def build_input(preset, enabled, device, channel="", positions=()):
     else:
         inputs, left, right = plain_inputs(graph)
         capture = stereo
-    outputs = stereo_chain(graph, preset, enabled, left, right)
-    return config_text(filter_chain(
-        "Skitz Effects Microphone", graph, inputs, outputs,
+    stages = staged((graph, inputs, left, right), effect_chain(preset, enabled), False)
+    return config_text(*modules(
+        "Skitz Effects Microphone", stages, [tap for tap, _title in steps(preset, enabled, "stereo")],
         {"node.name": MIC_CAPTURE, "target.object": device, **capture},
         # WirePlumber only links playback streams to sinks, so the controller links this one to the source.
         {"node.name": MIC_PLAYBACK, "node.autoconnect": False, **stereo},

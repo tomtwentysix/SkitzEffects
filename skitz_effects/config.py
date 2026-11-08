@@ -37,6 +37,11 @@ def side():
             "device_channels": {}}
 
 
+def meter():
+    # tap is "before", "after", or the step of the chain it follows, such as "equalizer_0" or "surround".
+    return {"layout": "stereo", "tap": "after"}
+
+
 @dataclass
 class Settings:
     setup_done: bool = False
@@ -52,6 +57,7 @@ class Settings:
     show_tray: bool = True
     # "curves" or "bars".
     analyser: str = "curves"
+    meters: dict = field(default_factory=lambda: {"output": meter(), "input": meter()})
 
     def save(self):
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -69,4 +75,5 @@ def load():
     settings = Settings(**{k: v for k, v in data.items() if k in known})
     for direction in ("output", "input"):
         setattr(settings, direction, {**side(), **getattr(settings, direction)})
+    settings.meters = {d: {**meter(), **settings.meters.get(d, {})} for d in ("output", "input")}
     return settings

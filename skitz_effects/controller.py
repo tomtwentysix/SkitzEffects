@@ -152,6 +152,9 @@ class Pipeline(GObject.Object):
         self.virtual_class = "Audio/Sink" if output else "Audio/Source/Virtual"
         self.virtual_description = "Skitz Effects Microphone"
         self.control_node = graph.CAPTURE if output else graph.MIC_CAPTURE
+        self.playback_node = graph.PLAYBACK if output else graph.MIC_PLAYBACK
+        # The steps of the running chain, which the controller links one into the next.
+        self._taps = []
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.route = ""
         self._proc = None
@@ -267,9 +270,12 @@ class Pipeline(GObject.Object):
         elif not self._missing_since:
             self._missing_since = time.monotonic()
             GLib.timeout_add_seconds(MISSING_GRACE + 1, lambda: self.queue_rebuild() or False)
-        if self.direction == "input" and pw.node_id(graph.MIC_PLAYBACK):
-            if not pw.linked(graph.MIC_PLAYBACK, self.virtual):
-                pw.link(graph.MIC_PLAYBACK, self.virtual)
+        joins = graph.joins(self._taps, self.control_node, self.playback_node)
+        if self.direction == "input":
+            joins.append((graph.MIC_PLAYBACK, self.virtual))
+        for out_name, in_name in joins:
+            if pw.node_id(out_name) and pw.node_id(in_name) and not pw.linked(out_name, in_name):
+                pw.link(out_name, in_name)
         self._check_chain()
         self._check_rate()
         self._route_streams()
@@ -379,6 +385,7 @@ class Pipeline(GObject.Object):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(conf)
         self._stop_chain()
+        self._taps = [tap for tap, _title in graph.steps(self.preset, self.state["enabled"], route)]
         self._rate = 0
         self._proc = subprocess.Popen(["pipewire", "-c", str(path)], preexec_fn=_start_chain,
                                       stdin=subprocess.DEVNULL)
@@ -388,6 +395,12 @@ class Pipeline(GObject.Object):
         GLib.timeout_add_seconds(3, self._check_chain)
         self.emit("state-changed")
         return False
+
+    def steps(self):
+        """The steps of the chain that a meter can read after, as [(tap, title, stream node)]."""
+        steps = graph.steps(self.preset, self.state["enabled"], self.route)
+        names = graph.stream_names([tap for tap, _title in steps], self.control_node, self.playback_node)
+        return [(tap, title, play) for (tap, title), (_cap, play) in zip(steps, names)]
 
     def _build(self, device):
         enabled = self.state["enabled"]
@@ -484,7 +497,8 @@ class Pipeline(GObject.Object):
         if controls is None:
             self.queue_rebuild()
         elif self.preset.enabled(effect_id) and self.pw:
-            self.pw.set_controls(self.control_node, controls)
+            node = graph.control_node(self._taps, self.control_node, self.playback_node, effect_id)
+            self.pw.set_controls(node, controls)
             # The running chain now matches the edited preset, so it needs no restart.
             if self.device:
                 self._conf = self._build(self.device)[1]
