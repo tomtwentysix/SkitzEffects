@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.10
+Version:        1.0.11
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.11-1
+- Newly added effects start with Easy Effects' own default settings, and settings missing from a
+  preset read as Easy Effects would read them rather than as the control's minimum. The equalizer
+  keeps its 10 octave bands.
+- The Low-Pass sidechain mode saved by Easy Effects now reaches the plugin.
+
 * Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.10-1
 - The effects no longer slow to a crawl when a game's sound fades out. The near-silent tail reached the
   HRIR as denormal numbers, which kept the realtime chain busy until the kernel stopped it and Skitz
