@@ -118,4 +118,4 @@ def test_new_effects_do_not_share_default_objects(ee_root):
     preset.settings(first)["left"]["band0"]["gain"] = 6.0
     assert preset.settings(second)["left"]["band0"]["gain"] == 0.0
     assert presets.DEFAULTS["equalizer"]["left"]["band0"]["gain"] == 0.0
-    assert len(presets.DEFAULTS["equalizer"]["left"]) == presets.DEFAULTS["equalizer"]["num-bands"] == 32
+    assert len(presets.DEFAULTS["equalizer"]["left"]) == presets.DEFAULTS["equalizer"]["num-bands"] == 10

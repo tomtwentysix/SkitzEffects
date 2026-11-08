@@ -144,16 +144,14 @@ def wav_channels(path):
     return 0
 
 
-EQ_FREQUENCIES = (22.4, 27.8, 34.51, 42.82, 53.14, 65.95, 81.83, 101.55, 126.0, 156.38, 194.06, 240.81, 298.834,
-                  370.834, 460.182, 571.057, 708.647, 879.387, 1091.26, 1354.19, 1680.47, 2085.35, 2587.79,
-                  3211.29, 3985.01, 4945.15, 6136.63, 7615.17, 9449.96, 11726.8, 14552.2, 18058.4)
+EQ_FREQUENCIES = (32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
 MB_SPLITS = (500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0, 16000.0)
 
 
 def _eq_side():
     return {
-        f"band{i}": {"frequency": f, "gain": 0.0, "mode": "RLC (BT)", "mute": False, "q": 4.36, "slope": "x1",
-                     "solo": False, "type": "Bell", "width": 4.0}
+        f"band{i}": {"frequency": float(f), "gain": 0.0, "mode": "RLC (BT)", "mute": False, "q": 1.504760237537245,
+                     "slope": "x1", "solo": False, "type": "Bell", "width": 4.0}
         for i, f in enumerate(EQ_FREQUENCIES)
     }
 
@@ -191,9 +189,10 @@ def _mb_band(i):
     return band
 
 
-# Easy Effects' own defaults for a newly added effect, from its kcfg files as of 8.3.2.
+# Easy Effects' own defaults for a newly added effect, from its kcfg files as of 8.3.2, except the
+# equalizer, which starts with 10 octave bands rather than Easy Effects' 32.
 DEFAULTS = {
-    "equalizer": {**_gains(), "mode": "IIR", "num-bands": 32, "split-channels": False, "balance": 0.0,
+    "equalizer": {**_gains(), "mode": "IIR", "num-bands": 10, "split-channels": False, "balance": 0.0,
                   "left": _eq_side(), "right": _eq_side()},
     "limiter": {**_gains(), **_mix(), "mode": "Herm Thin", "oversampling": "None", "dithering": "None",
                 "sidechain-type": "Internal", "threshold": 0.0, "attack": 5.0, "release": 5.0, "lookahead": 5.0,

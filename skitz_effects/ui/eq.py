@@ -116,11 +116,14 @@ class EqualizerEditor(Gtk.Box):
         self._fill_band()
 
     def count(self):
-        return int(self.settings.get("num-bands", presets.DEFAULTS["equalizer"]["num-bands"]))
+        return int(self.settings.get("num-bands", 10))
 
     def band(self, i, side=None):
         bands = self.settings.setdefault(side or self.side, {})
-        return bands.setdefault(f"band{i}", dict(presets.DEFAULTS["equalizer"]["left"][f"band{i}"]))
+        default = presets.DEFAULTS["equalizer"]["left"].get(f"band{i}") or {
+            "frequency": 1000.0, "gain": 0.0, "type": "Bell", "q": 1.504760237537245, "mode": "RLC (BT)",
+            "slope": "x1", "mute": False, "solo": False, "width": 4.0}
+        return bands.setdefault(f"band{i}", dict(default))
 
     def changed(self):
         self.on_change()
