@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.11
+Version:        1.0.12
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.12-1
+- Clicking a peak meter in the status bar chooses how many channels it shows (mono, stereo, 5.1 or
+  7.1) and where it measures: before the effects, after the surround downmix or any effect, or at
+  the final output. Both meters remember their choices.
+- Each step of the effect chains now runs as a filter of its own, so the audio between steps can be
+  measured. The steps still run in the one realtime process.
+
 * Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.11-1
 - Newly added effects start with Easy Effects' own default settings, and settings missing from a
   preset read as Easy Effects would read them rather than as the control's minimum. The equalizer
