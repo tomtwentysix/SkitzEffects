@@ -27,6 +27,12 @@ MIC_PLAYBACK = "skitz_mic_output"
 HESUVI = {"FL": (0, 1), "SL": (2, 3), "RL": (4, 5), "FC": (6, 13), "FR": (8, 7), "SR": (10, 9), "RR": (12, 11)}
 # 5.1 surrounds sit beside the listener, so they take the side IRs; LFE is placed like FC.
 HRIR_SOURCE = {"5.1": {"RL": "SL", "RR": "SR", "LFE": "FC"}, "7.1": {"LFE": "FC"}}
+# Added to every sample entering a chain. A game's audio fading out reaches the chain as denormals,
+# which run the convolvers' FFTs about 20 times slower: enough to keep a realtime data loop busy until
+# the kernel kills it. PipeWire's cpu.zero.denormals cannot prevent that, as it is applied to the main
+# thread instead whenever the data loop starts late, which it does under load. The offset keeps every
+# value normal, is lost in the rounding of any sample above -180 dB, and is far below a DAC's last bit.
+DENORMAL_GUARD = 1e-12
 
 
 def choose_route(layout_channels, device_channels, downmix, hrir_ok):
@@ -66,8 +72,8 @@ class Graph:
     def link(self, out, into):
         self.links.append({"output": out, "input": into})
 
-    def copy(self, name):
-        return self.add(type="builtin", label="copy", name=name)
+    def inlet(self, name):
+        return self.add(type="builtin", label="linear", name=name, control={"Mult": 1.0, "Add": DENORMAL_GUARD})
 
     def mixer(self, name, sources):
         self.add(type="builtin", label="mixer", name=name)
@@ -145,7 +151,7 @@ def hrir_downmix(graph, layout, hrir):
     remap = HRIR_SOURCE.get(layout, {})
     left, right = [], []
     for ch in LAYOUTS[layout]:
-        src = graph.copy(f"in_{ch}")
+        src = graph.inlet(f"in_{ch}")
         ir_l, ir_r = HESUVI[remap.get(ch, ch)]
         left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out", tailsize=HRIR_TAIL,
                                     length=HRIR_LENGTH))
@@ -173,7 +179,7 @@ def stereo_chain(graph, preset, enabled, left, right):
 
 
 def plain_inputs(graph):
-    return [f"{graph.copy('in_l')}:In", f"{graph.copy('in_r')}:In"], "in_l:Out", "in_r:Out"
+    return [f"{graph.inlet('in_l')}:In", f"{graph.inlet('in_r')}:In"], "in_l:Out", "in_r:Out"
 
 
 def filter_chain(description, graph, inputs, outputs, capture, playback):
@@ -231,7 +237,7 @@ def build_input(preset, enabled, device, channel="", positions=()):
     graph = Graph()
     stereo = channels(LAYOUTS["stereo"])
     if channel in positions:
-        source = graph.copy("in_l")
+        source = graph.inlet("in_l")
         # A null input discards that channel of the capture.
         inputs = [f"{source}:In" if position == channel else None for position in positions]
         left = right = f"{source}:Out"

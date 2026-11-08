@@ -188,6 +188,23 @@ def test_mono_profile_records_only_its_mono_channel(ee_root, lv2):
     assert args["capture.props"]["audio.position"] == ["MONO", "AUX1"]
 
 
+@pytest.mark.parametrize("text", [
+    graph.build(None, True, "hrir", "7.1", HRIR, TARGET),
+    graph.build(None, True, "passthrough", "stereo", HRIR, TARGET),
+    graph.build_input(None, True, "alsa_input.test"),
+    graph.build_input(None, True, "alsa_input.test", "AUX1", ("MONO", "AUX1")),
+])
+def test_every_input_is_guarded_against_denormals(text):
+    modules = [m for m in json.loads(text)["context.modules"] if "filter-chain" in m["name"]]
+    for module in modules:
+        g = module["args"]["filter.graph"]
+        nodes = {n["name"]: n for n in g["nodes"]}
+        for port in filter(None, g["inputs"]):
+            node = nodes[port.split(":")[0]]
+            assert node["label"] == "linear"
+            assert node["control"] == {"Mult": 1.0, "Add": graph.DENORMAL_GUARD}
+
+
 def test_chains_never_ask_for_realtime():
     text = graph.build(None, True, "passthrough", "stereo", HRIR, TARGET)
     assert "libpipewire-module-rt" not in [m["name"] for m in json.loads(text)["context.modules"]]
