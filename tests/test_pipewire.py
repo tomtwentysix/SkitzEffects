@@ -42,15 +42,14 @@ def test_a_closed_stream_leaves_nothing_for_the_next_one_with_its_id():
     assert pw.stream_target(347) == ""
 
 
-def route(streams, targets, blocked=(), running=True, links=None):
+def route(streams, targets, blocked=(), running=True, channels=None):
     moves = []
-    ids = {"skitz_sink": 93, "skitz_stereo": 141}
     pw = SimpleNamespace(streams=lambda _cls: streams.items(), stream_target=lambda oid: targets.get(oid, ""),
-                         move=lambda oid, to: moves.append((oid, to)), node_id=ids.get,
-                         links_from=lambda oid: (links or {}).get(oid, set()))
+                         move=lambda oid, to: moves.append((oid, to)),
+                         stream_channels=lambda oid: (channels or {}).get(oid, 0), upmixes=lambda oid: True,
+                         stop_upmix=lambda oid: moves.append((oid, "no upmix")))
     pipeline = SimpleNamespace(pw=pw, stream_class="Stream/Output/Audio", virtual="skitz_sink",
-                               chain_running=running, blocked=lambda props: props["application.name"] in blocked,
-                               _target=lambda oid: "skitz_sink", _moves={})
+                               chain_running=running, blocked=lambda props: props["application.name"] in blocked)
     Pipeline._route_streams(pipeline)
     return moves
 
@@ -69,11 +68,11 @@ def test_streams_left_out_in_the_mixer_return_to_the_device():
     assert route(streams, {1: "skitz_sink", 2: "headset"}, blocked=("Discord", "Chat")) == [(1, "")]
 
 
-def test_a_stream_wireplumber_failed_to_move_is_sent_again():
+def test_stereo_streams_stop_upmixing_on_the_surround_sink():
     streams = {1: {"application.name": "Firefox", "node.name": "Firefox"},
-               2: {"application.name": "mpv", "node.name": "mpv"}}
-    moves = route(streams, {1: "skitz_sink", 2: "skitz_sink"}, links={1: {141}, 2: {93}})
-    assert moves == [(1, "")]
+               2: {"application.name": "Gears", "node.name": "Gears"}}
+    moves = route(streams, {1: "skitz_sink", 2: "skitz_sink"}, channels={1: 2, 2: 8})
+    assert moves == [(1, "no upmix")]
 
 
 def test_streams_wait_on_the_device_while_the_chain_is_down():
@@ -81,24 +80,14 @@ def test_streams_wait_on_the_device_while_the_chain_is_down():
     assert route(streams, {1: "skitz_sink"}, running=False) == [(1, "")]
 
 
-def test_streams_take_the_stereo_path_once_they_turn_out_stereo():
-    channels = {1: 2, 2: 8, 3: 0, 4: 1}
-    pw = SimpleNamespace(stream_channels=lambda oid: channels[oid], node_id=lambda name: 7)
-    pipeline = SimpleNamespace(pw=pw, virtual="skitz_sink", has_stereo_sink=lambda: True)
-    targets = {oid: Pipeline._target(pipeline, oid) for oid in channels}
-    assert targets == {1: "skitz_stereo", 2: "skitz_sink", 3: "skitz_sink", 4: "skitz_stereo"}
-    pipeline.has_stereo_sink = lambda: False
-    assert Pipeline._target(pipeline, 1) == "skitz_sink"
-
-
-def sink(oid, name, fmt):
-    return {"id": oid, "type": "PipeWire:Interface:Node",
-            "info": {"props": {"media.class": "Audio/Sink", "node.name": name}, "params": {"Format": fmt}}}
-
-
-def test_a_device_reports_the_rate_it_runs_at():
-    pw = model()
-    pw._apply([sink(53, "dali", [{"rate": 96000, "channels": 2}])])
-    assert pw.devices("Audio/Sink")[0].rate == 96000
-    pw._apply([sink(53, "dali", [])])
-    assert pw.devices("Audio/Sink")[0].rate == 0
+def test_a_stream_reports_whether_it_upmixes():
+    pw = PipeWire()
+    node = stream(5, "Firefox")
+    node["info"]["params"] = {"Props": [{"volume": 1.0}, {"params": ["channelmix.mix-lfe", True,
+                                                                     "channelmix.upmix", True]}]}
+    pw._apply([node])
+    assert pw.upmixes(5)
+    node["info"]["params"]["Props"][1]["params"][3] = False
+    pw._apply([node])
+    assert not pw.upmixes(5)
+    assert not pw.upmixes(6)

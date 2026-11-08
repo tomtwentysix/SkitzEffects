@@ -22,10 +22,6 @@ PLAYBACK = "skitz_output"
 SOURCE = "skitz_source"
 MIC_CAPTURE = "skitz_mic"
 MIC_PLAYBACK = "skitz_mic_output"
-# On the HRIR route, stereo apps play into this sink and skip the HRIR.
-STEREO_SINK = "skitz_stereo"
-STEREO_CAPTURE = "skitz_stereo_effects"
-STEREO_PLAYBACK = "skitz_stereo_output"
 
 # Channel indices in a HeSuVi 14-channel HRIR, as (left ear, right ear).
 HESUVI = {"FL": (0, 1), "SL": (2, 3), "RL": (4, 5), "FC": (6, 13), "FR": (8, 7), "SR": (10, 9), "RR": (12, 11)}
@@ -223,22 +219,11 @@ def build(preset, enabled, route, layout, hrir, target):
     outputs = stereo_chain(graph, preset, enabled, left, right)
     capture = LAYOUTS[layout] if route in ("passthrough", "hrir") else LAYOUTS["stereo"]
     playback = LAYOUTS[layout] if route == "passthrough" else LAYOUTS["stereo"]
-    modules = [filter_chain(
+    return config_text(filter_chain(
         "Skitz Effects Output", graph, inputs, outputs,
         {"node.name": CAPTURE, "target.object": SINK, "stream.capture.sink": True, **channels(capture)},
         {"node.name": PLAYBACK, "target.object": target, **channels(playback)},
-    )]
-    # Stereo streams take a path of their own, so they never go through the HRIR or a surround mix.
-    if layout != "stereo":
-        stereo = Graph()
-        stereo_inputs, left, right = plain_inputs(stereo)
-        modules.append(filter_chain(
-            "Skitz Effects Stereo Output", stereo, stereo_inputs, stereo_chain(stereo, preset, enabled, left, right),
-            {"node.name": STEREO_CAPTURE, "target.object": STEREO_SINK, "stream.capture.sink": True,
-             **channels(LAYOUTS["stereo"])},
-            {"node.name": STEREO_PLAYBACK, "target.object": target, **channels(LAYOUTS["stereo"])},
-        ))
-    return config_text(*modules)
+    ))
 
 
 def build_input(preset, enabled, device, channel="", positions=()):

@@ -61,16 +61,12 @@ class PeakMeter(Gtk.Box):
 
 
 class VolumeControl(Gtk.Box):
-    """A mute button and slider for one PipeWire node, kept in step with changes made elsewhere.
+    """A mute button and slider for one PipeWire node, kept in step with changes made elsewhere."""
 
-    Nodes in `linked` follow the slider and mute button but are not read back.
-    """
-
-    def __init__(self, controller, node, label, tooltip, icons, linked=()):
+    def __init__(self, controller, node, label, tooltip, icons):
         super().__init__(spacing=4, tooltip_text=tooltip, valign=Gtk.Align.CENTER)
         self.controller = controller
         self.node = node
-        self.linked = linked
         self.icons = icons
         self._pending = None
         self._send_id = 0
@@ -118,16 +114,14 @@ class VolumeControl(Gtk.Box):
     def _send(self):
         self._send_id = 0
         if self._pending is not None and self.node():
-            for node in (self.node(), *self.linked):
-                self.controller.pw.set_volume(node, self._pending)
+            self.controller.pw.set_volume(self.node(), self._pending)
         self._pending = None
         return False
 
     def _on_mute(self, button):
         self._update_labels()
         if not self._syncing and self.node():
-            for node in (self.node(), *self.linked):
-                self.controller.pw.set_mute(node, button.get_active())
+            self.controller.pw.set_mute(self.node(), button.get_active())
 
 
 class StatusBar(Gtk.ActionBar):
@@ -141,7 +135,7 @@ class StatusBar(Gtk.ActionBar):
         self.volumes = (
             VolumeControl(controller, lambda: graph.SINK, "Output Pre-Gain",
                           "Volume of everything apps play, before the output effects",
-                          ("audio-volume-high-symbolic", "audio-volume-muted-symbolic"), (graph.STEREO_SINK,)),
+                          ("audio-volume-high-symbolic", "audio-volume-muted-symbolic")),
             VolumeControl(controller, lambda: inputs.device and inputs.device.name, "Mic Pre-Gain",
                           "Microphone volume, before the input effects",
                           ("microphone-sensitivity-high-symbolic", "microphone-sensitivity-muted-symbolic")),

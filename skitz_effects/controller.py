@@ -23,9 +23,8 @@ RT_TIME_LIMIT = 200000
 NICE_LEVEL = -11
 # Seconds a chosen device may be gone before another one stands in for it.
 MISSING_GRACE = 5
-# Seconds WirePlumber gets to relink a moved stream, and how often a stream is sent again.
-RELINK_WAIT = 3
-RELINK_TRIES = 3
+# Stereo apps had a sink of their own before 1.0.9; one left behind is removed.
+OLD_STEREO_SINK = "skitz_stereo"
 
 
 def data_loop_threads(pid):
@@ -70,11 +69,6 @@ def _on_priority_set(bus, result):
         bus.call_finish(result)
     except GLib.Error as e:
         print(f"skitz-effects: could not raise the effects' priority: {e.message}")
-
-
-def stuck(linked, target_id, waited):
-    """Whether a stream sent to target_id a while ago is still linked somewhere else."""
-    return bool(linked) and target_id is not None and target_id not in linked and waited >= RELINK_WAIT
 
 
 def rate_changed(started_at, rate):
@@ -164,8 +158,6 @@ class Pipeline(GObject.Object):
         self._started = 0.0
         self._failures = 0
         self._realtime = True
-        # Stream id -> (when it was last sent, how often it has been sent again).
-        self._moves = {}
         self._missing_since = 0.0
         self._rate = 0
         self._rate_restart_id = 0
@@ -244,7 +236,7 @@ class Pipeline(GObject.Object):
                 pw.create_virtual(self.virtual, label, self.virtual_class, positions)
             return
         if self.direction == "output":
-            self._sync_stereo_sink()
+            pw.destroy(OLD_STEREO_SINK)
         default = pw.default(self.media_class)
         devices = self.devices()
         if self.state["device"] and not any(d.name == self.state["device"] for d in devices):
@@ -283,30 +275,6 @@ class Pipeline(GObject.Object):
         self._route_streams()
         self.queue_rebuild()
 
-    def has_stereo_sink(self):
-        """Every app sees the surround sink; streams that turn out to be stereo move to a stereo one,
-        whose chain has no HRIR or surround mix."""
-        return self.direction == "output" and self.controller.settings.layout != "stereo"
-
-    def _sync_stereo_sink(self):
-        pw = self.pw
-        label = self.virtual_label().rsplit(" · ", 1)[0] + " · Stereo"
-        exists = pw.node_id(graph.STEREO_SINK) is not None
-        if self.has_stereo_sink():
-            if exists and pw.node_description(graph.STEREO_SINK) != label:
-                pw.destroy(graph.STEREO_SINK)
-            elif not exists:
-                pw.create_virtual(graph.STEREO_SINK, label, "Audio/Sink", LAYOUTS["stereo"])
-        elif exists:
-            pw.destroy(graph.STEREO_SINK)
-
-    def _target(self, oid):
-        # Until its format is known a stream stays on the surround sink, where apps first connect.
-        stereo = 0 < self.pw.stream_channels(oid) <= 2
-        if stereo and self.has_stereo_sink() and self.pw.node_id(graph.STEREO_SINK):
-            return graph.STEREO_SINK
-        return self.virtual
-
     def _route_streams(self):
         """Sends every app stream through Skitz Effects while its chain runs, unless the mixer leaves it out.
 
@@ -315,29 +283,18 @@ class Pipeline(GObject.Object):
         goes back to the default only if Skitz Effects had sent it here.
         """
         pw = self.pw
-        now = time.monotonic()
-        seen = set()
         for oid, props in pw.streams(self.stream_class):
             if not routable(props):
                 continue
-            seen.add(oid)
             current = pw.stream_target(oid)
             if self.chain_running and not self.blocked(props):
-                target = self._target(oid)
-                sent, tries = self._moves.get(oid, (0.0, 0))
-                if current != target:
-                    pw.move(oid, target)
-                    self._moves[oid] = (now, tries)
-                    GLib.timeout_add_seconds(RELINK_WAIT + 1, lambda: self._route_streams() or False)
-                elif tries < RELINK_TRIES and stuck(pw.links_from(oid), pw.node_id(target), now - sent):
-                    # WirePlumber sometimes fails to relink a playing stream ("links failed to
-                    # activate") and leaves it where it was, and only acts again when the target changes.
-                    print(f"skitz-effects: stream {oid} did not move to {target}, sending it again")
-                    pw.move(oid, "")
-                    self._moves[oid] = (now, tries + 1)
-            elif current in (self.virtual, graph.STEREO_SINK):
+                if 0 < pw.stream_channels(oid) <= 2 and pw.upmixes(oid):
+                    # Stereo stays on the front speakers instead of also reaching the centre and rears.
+                    pw.stop_upmix(oid)
+                if current != self.virtual:
+                    pw.move(oid, self.virtual)
+            elif current == self.virtual:
                 pw.move(oid, "")
-        self._moves = {oid: m for oid, m in self._moves.items() if oid in seen}
 
     def blocked(self, props):
         """Apps left out of the effects, kept in the preset's blocklist as Easy Effects does."""
@@ -408,8 +365,6 @@ class Pipeline(GObject.Object):
         self._rebuild_id = 0
         device = self.device
         if not self.controller.running or device is None or not self.pw.node_id(self.virtual):
-            return False
-        if self.has_stereo_sink() and not self.pw.node_id(graph.STEREO_SINK):
             return False
         route, conf = self._build(device)
         if route != self.route:
@@ -529,9 +484,7 @@ class Pipeline(GObject.Object):
         if controls is None:
             self.queue_rebuild()
         elif self.preset.enabled(effect_id) and self.pw:
-            for node in (self.control_node, graph.STEREO_CAPTURE if self.has_stereo_sink() else None):
-                if node:
-                    self.pw.set_controls(node, controls)
+            self.pw.set_controls(self.control_node, controls)
             # The running chain now matches the edited preset, so it needs no restart.
             if self.device:
                 self._conf = self._build(self.device)[1]
@@ -544,7 +497,6 @@ class Pipeline(GObject.Object):
             # Hand the default back to the device, or WirePlumber picks one of its own.
             self.pw.set_default(self.state["device"])
         self.pw.destroy(self.virtual)
-        self.pw.destroy(graph.STEREO_SINK)
 
     def _queue_save(self):
         if self._save_id:

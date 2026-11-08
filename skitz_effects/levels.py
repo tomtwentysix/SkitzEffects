@@ -170,9 +170,7 @@ class Meters(GObject.Object):
     def _wanted(self):
         output, inputs = self.controller.output, self.controller.input
         live = self.visible == "input"
-        # Stereo apps play into a sink of their own, so "before" adds both sinks together.
-        wanted = {("output", "before"): (graph.SINK, True, False),
-                  ("output", "before_stereo"): (graph.STEREO_SINK, True, False)}
+        wanted = {("output", "before"): (graph.SINK, True, False)}
         if output.device:
             wanted[("output", "after")] = (output.device.name, True, False)
         if inputs.device:
@@ -196,17 +194,12 @@ class Meters(GObject.Object):
                 self.taps[key] = Tap("_".join(key), target, sink_monitor, active)
 
     def _measure(self, key):
-        taps = [self.taps.get(key)]
-        if key == ("output", "before"):
-            taps.append(self.taps.get(("output", "before_stereo")))
-        live = [tap for tap in taps if tap and not tap.quiet()]
-        peak = np.zeros(2, np.float32)
-        for tap in taps:
+        tap = self.taps.get(key)
+        if tap is None or tap.quiet():
             if tap:
-                peak = np.maximum(peak, tap.take_peak())
-        if not live:
+                tap.take_peak()
             return np.full(len(POINTS), FLOOR), np.full(2, FLOOR)
-        return spectrum(sum(tap.buffer for tap in live)), to_db(peak)
+        return spectrum(tap.buffer), to_db(tap.take_peak())
 
     def _on_tick(self):
         now = time.monotonic()

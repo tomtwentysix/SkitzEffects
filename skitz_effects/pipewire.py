@@ -246,6 +246,21 @@ class PipeWire(GObject.Object):
         formats = info.get("params", {}).get("Format") or []
         return next((f["channels"] for f in formats if isinstance(f.get("channels"), int)), 0)
 
+    def upmixes(self, oid):
+        """Whether a stream spreads its channels over speakers it has no audio for."""
+        info = (self.objects.get(oid) or {}).get("info") or {}
+        for props in info.get("params", {}).get("Props") or []:
+            # Props carry the converter's settings as a flat [key, value, key, value, ...] list.
+            values = props.get("params") or []
+            for key, value in zip(values[::2], values[1::2]):
+                if key == "channelmix.upmix":
+                    return bool(value)
+        return False
+
+    def stop_upmix(self, oid):
+        if self._once("stop-upmix", oid):
+            run(["pw-cli", "set-param", str(oid), "Props", '{ params = [ "channelmix.upmix" false ] }'])
+
     def layout(self, oid):
         """A node's channel layout name; streams report theirs as soon as their format is set."""
         info = (self.objects.get(oid) or {}).get("info") or {}
@@ -302,12 +317,6 @@ class PipeWire(GObject.Object):
                    and (obj.get("info") or {}).get("output-node-id") == out_id
                    and (obj.get("info") or {}).get("input-node-id") == in_id
                    for obj in self.objects.values())
-
-    def links_from(self, oid):
-        """Ids of the nodes one node's output is linked to."""
-        return {(obj.get("info") or {}).get("input-node-id") for obj in self.objects.values()
-                if obj.get("type") == "PipeWire:Interface:Link"
-                and (obj.get("info") or {}).get("output-node-id") == oid}
 
     def link(self, out_name, in_name):
         """Links every port of one node to the next, passively, and keeps the links after pw-link exits."""

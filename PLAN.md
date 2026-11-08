@@ -125,9 +125,9 @@ Midas UMC22 and the user's own presets.
 ## Output routing (after M2)
 - Every app sees the surround layout: Skitz Effects' sink is the default, named after the device
   ("Dali IO6 Analog Stereo · 7.1 Surround"); choosing a real device in GNOME still switches to it.
-- Streams that open with two channels or fewer move to a stereo sink whose chain has the effects
-  but no HRIR or surround mix; streams with more channels stay on the surround sink. Both chains
-  run as two filter-chain modules in one process.
+- All streams share the one surround sink and chain. Stereo and mono streams have PipeWire's upmix
+  turned off, so they play only on the front speakers. A separate stereo sink (1.0.6 to 1.0.8) was
+  dropped, because WirePlumber sometimes failed to move a playing stream onto it.
 - The HRIR convolvers use only the first 2048 samples of the HRIR (99.99% of its energy), with the
   tail threshold beyond that, so their work is even across cycles.
 - Hardware quirks stay outside the app. The Dali headset glitches whenever PipeWire changes its
