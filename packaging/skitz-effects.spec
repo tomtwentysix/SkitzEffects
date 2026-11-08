@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.8
+Version:        1.0.9
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.9-1
+- Every app plays through the one effects chain again; the separate stereo sink is gone, as
+  WirePlumber sometimes failed to move a playing stream onto it.
+- Stereo and mono apps play only on the front speakers, with PipeWire's upmix turned off for them.
+
 * Fri Nov 06 2026 Tom <tom@solarflareit.co.uk> - 1.0.8-1
 - The effects run at realtime priority again, as Easy Effects does, so they no longer miss cycles and
   pop while a game keeps every core busy. A chain the kernel stops for overrunning its realtime

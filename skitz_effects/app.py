@@ -11,7 +11,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 from . import config, deps, migrate  # noqa: E402
 from .controller import Controller  # noqa: E402
 
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 ICONS = Path(__file__).parent.parent / "data" / "icons"
 DEVELOPER = "SolarFlare Developments"
 
