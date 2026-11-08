@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.9
+Version:        1.0.10
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.10-1
+- The effects no longer slow to a crawl when a game's sound fades out. The near-silent tail reached the
+  HRIR as denormal numbers, which kept the realtime chain busy until the kernel stopped it and Skitz
+  fell back to a lower priority that pops under load. Every chain input now carries a tiny offset that
+  keeps those numbers out of the slow range.
+
 * Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.9-1
 - Every app plays through the one effects chain again; the separate stereo sink is gone, as
   WirePlumber sometimes failed to move a playing stream onto it.
