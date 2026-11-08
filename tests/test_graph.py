@@ -95,8 +95,8 @@ def test_build_stereo_route_lets_pipewire_downmix(ee_root, lv2):
 
 def test_effects_off_or_missing_leave_a_plain_copy(ee_root, lv2):
     off = chain_args(graph.build(presets.load("Dali iO6"), False, "passthrough", "stereo", HRIR, TARGET))
-    assert node_names(off) == {"in_l", "in_r"}
-    assert off["filter.graph"]["outputs"] == ["in_l:Out", "in_r:Out"]
+    assert node_names(off) == {"in_l", "in_r", "out_0", "out_1"}
+    assert off["filter.graph"]["outputs"] == ["out_0:Out", "out_1:Out"]
     # Easy Effects 6 preset: Calf and bs2b effects have no plugin, and the IR is not installed.
     old = graph.build(presets.load("Bass Boosted"), True, "passthrough", "stereo", HRIR, TARGET)
     assert {n.get("plugin") for n in chain_nodes(old).values()} == {
@@ -172,7 +172,7 @@ def test_input_channel_feeds_both_sides(ee_root, lv2):
     args = chain_args(graph.build_input(None, True, "alsa_input.mic", "FR", ("FL", "FR")))
     g = args["filter.graph"]
     assert g["inputs"] == [None, "in_l:In"]
-    assert g["outputs"] == ["in_l:Out", "in_l:Out"]
+    assert g["outputs"] == ["out_0:Out", "out_1:Out"]
     assert args["capture.props"]["audio.position"] == ["FL", "FR"]
     # A channel the device does not have falls back to recording every channel.
     fallback = chain_args(graph.build_input(None, True, "alsa_input.mic", "AUX3", ("MONO",)))
@@ -183,7 +183,7 @@ def test_input_channel_feeds_both_sides(ee_root, lv2):
 def test_mono_profile_records_only_its_mono_channel(ee_root, lv2):
     args = chain_args(graph.build_input(None, True, "alsa_input.umc22.analog-mono-left", "MONO", ("MONO", "AUX1")))
     assert args["filter.graph"]["inputs"] == ["in_l:In", None]
-    assert args["filter.graph"]["outputs"] == ["in_l:Out", "in_l:Out"]
+    assert args["filter.graph"]["outputs"] == ["out_0:Out", "out_1:Out"]
     assert args["capture.props"]["audio.position"] == ["MONO", "AUX1"]
 
 
@@ -295,3 +295,27 @@ def test_mic_steps_follow_its_preset(ee_root, lv2):
     assert modules[0]["filter.graph"]["inputs"] == [None, "in_l:In"]
     assert modules[1]["filter.graph"]["inputs"] == ["in_l:In", "in_r:In"]
     assert modules[-1]["playback.props"]["node.name"] == graph.MIC_PLAYBACK
+
+
+def test_the_mic_chain_runs_at_48_khz(ee_root, lv2):
+    preset = presets.create("Mic", "input")
+    preset.add("deepfilternet")
+    preset.add("limiter")
+    for text in (graph.build_input(preset, True, "alsa_input.mic"),
+                 graph.build_input(preset, True, "alsa_input.mic", "FR", ("FL", "FR"))):
+        for module in chain_modules(text):
+            assert module["capture.props"]["audio.rate"] == graph.INPUT_RATE == 48000
+            assert module["playback.props"]["audio.rate"] == graph.INPUT_RATE
+    output = chain_modules(graph.build(preset, True, "passthrough", "stereo", HRIR, TARGET))
+    assert all("audio.rate" not in m["capture.props"] for m in output)
+
+
+def test_no_chain_outputs_straight_from_an_input(ee_root, lv2):
+    for text in (graph.build_input(None, True, "alsa_input.mic"),
+                 graph.build_input(None, True, "alsa_input.mic", "MONO", ("MONO", "AUX1")),
+                 graph.build(None, True, "passthrough", "stereo", HRIR, TARGET)):
+        for module in chain_modules(text):
+            g = module["filter.graph"]
+            inlets = {port.split(":")[0] for port in g["inputs"] if port}
+            assert not inlets & {port.split(":")[0] for port in g["outputs"]}
+            assert {port.split(":")[0] for port in g["outputs"]} <= node_names(module)

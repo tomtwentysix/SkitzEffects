@@ -227,7 +227,7 @@ def staged(entry, effects, separate):
 def modules(description, stages, taps, capture, playback):
     """One filter-chain per stage; the streams between stages carry the playback's channels."""
     names = stream_names(taps, capture["node.name"], playback["node.name"])
-    inner = {k: playback[k] for k in ("audio.channels", "audio.position")}
+    inner = {k: playback[k] for k in ("audio.channels", "audio.position", "audio.rate") if k in playback}
     out = []
     for i, ((graph, inputs, outputs), (cap, play)) in enumerate(zip(stages, names)):
         out.append(filter_chain(
@@ -242,6 +242,15 @@ def plain_inputs(graph):
 
 
 def filter_chain(description, graph, inputs, outputs, capture, playback):
+    # filter-graph plays silence from a node that is both an input and an output of the graph, as
+    # a chain without effects would be, so such outputs go through a node of their own.
+    inlets = {port.split(":")[0] for port in inputs if port}
+    outputs = list(outputs)
+    for i, port in enumerate(outputs):
+        if port.split(":")[0] in inlets:
+            name = graph.add(type="builtin", label="linear", name=f"out_{i}", control={"Mult": 1.0, "Add": 0.0})
+            graph.link(port, f"{name}:In")
+            outputs[i] = f"{name}:Out"
     # Both ends are passive, so nothing is held open while no app is playing or recording.
     return {
         "name": "libpipewire-module-filter-chain",
@@ -291,16 +300,21 @@ def build(preset, enabled, route, layout, hrir, target):
     ))
 
 
+# The mic chain runs at 48 kHz whatever rate the graph runs at, as DeepFilterNet supports no other;
+# PipeWire resamples at the chain's ends.
+INPUT_RATE = 48000
+
+
 def build_input(preset, enabled, device, channel="", positions=()):
     """The mic chain; with a channel, only that one of the device's positions feeds both sides."""
     graph = Graph()
-    stereo = channels(LAYOUTS["stereo"])
+    stereo = {**channels(LAYOUTS["stereo"]), "audio.rate": INPUT_RATE}
     if channel in positions:
         source = graph.inlet("in_l")
         # A null input discards that channel of the capture.
         inputs = [f"{source}:In" if position == channel else None for position in positions]
         left = right = f"{source}:Out"
-        capture = channels(positions)
+        capture = {**channels(positions), "audio.rate": INPUT_RATE}
     else:
         inputs, left, right = plain_inputs(graph)
         capture = stereo
