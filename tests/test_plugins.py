@@ -70,7 +70,30 @@ def test_expander_maps_easy_effects_defaults():
     assert controls["er"] == 4.0
     assert controls["al"] == pytest.approx(graph.db(-12.0))
     assert controls["sci"] == 0
-    assert controls["scm"] == 1
+    assert controls["scm"] == 0
+
+
+# LSP's own defaults are the right ones for these, as Easy Effects has no setting for them.
+PLUGIN_DEFAULTS = {"hold", "band0/enable-band", "band0/split-frequency"}
+
+
+def test_every_control_has_an_easy_effects_default():
+    for kind, defaults in presets.DEFAULTS.items():
+        for param in plugins.effect(kind).params:
+            if param.key not in PLUGIN_DEFAULTS:
+                assert plugins.lookup(defaults, param.key) is not None, (kind, param.key)
+
+
+def test_defaults_map_onto_every_port():
+    for kind, defaults in presets.DEFAULTS.items():
+        effect = plugins.effect(kind)
+        controls = effect.controls(defaults)
+        ports = {p.port for p in effect.params if p.port and p.key not in PLUGIN_DEFAULTS}
+        assert ports <= set(controls), (kind, ports - set(controls))
+
+
+def test_easy_effects_low_pass_sidechain_mode():
+    assert plugins.effect("gate").controls({"sidechain": {"mode": "Low-Pass"}})["scm"] == plugins.SC_MODES.index("LPF")
 
 
 def test_ports_are_unique_per_effect():

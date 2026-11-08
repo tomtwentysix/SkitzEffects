@@ -106,7 +106,7 @@ def mapped_controls(params, data):
 
 
 # Older Easy Effects presets name LSP's oversampling modes by filter length.
-ALIASES = {"Upward": "Up", "Downward": "Down", "Boosting": "Boost"}
+ALIASES = {"Upward": "Up", "Downward": "Down", "Boosting": "Boost", "Low-Pass": "LPF"}
 for _kind in ("Half", "Full"):
     for _n in (2, 3, 4, 6, 8):
         ALIASES[f"{_kind} x{_n}(2L)"] = f"{_kind} x{_n}/16 bit"

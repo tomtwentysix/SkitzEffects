@@ -96,3 +96,26 @@ def test_layout_names():
     assert layout_name((), 8) == "7.1"
     assert layout_name(tuple(f"AUX{i}" for i in range(8)), 8) == "8 channels"
     assert layout_name(("FL", "FR", "RL", "RR"), 4) == "4 channels"
+
+
+def test_missing_settings_read_as_easy_effects_defaults(ee_root):
+    preset = presets.load("Laptop")
+    gate = preset.settings("gate#0")
+    assert gate["curve-threshold"] == -40.0
+    assert gate["sidechain"]["mode"] == "Peak"
+    del gate["reduction"], gate["sidechain"]["reactivity"]
+    gate = preset.settings("gate#0")
+    assert gate["reduction"] == presets.DEFAULTS["gate"]["reduction"]
+    assert gate["sidechain"]["reactivity"] == 10.0
+    band = preset.settings("multiband_compressor#0")["band7"]
+    assert band["split-frequency"] == 16000.0 and band["enable-band"] is False
+    assert presets.DEFAULTS["multiband_compressor"]["band7"]["sidechain-lowcut-frequency"] == 16000.0
+
+
+def test_new_effects_do_not_share_default_objects(ee_root):
+    preset = presets.load("Perfect EQ")
+    first, second = preset.add("equalizer"), preset.add("equalizer")
+    preset.settings(first)["left"]["band0"]["gain"] = 6.0
+    assert preset.settings(second)["left"]["band0"]["gain"] == 0.0
+    assert presets.DEFAULTS["equalizer"]["left"]["band0"]["gain"] == 0.0
+    assert len(presets.DEFAULTS["equalizer"]["left"]) == presets.DEFAULTS["equalizer"]["num-bands"] == 32

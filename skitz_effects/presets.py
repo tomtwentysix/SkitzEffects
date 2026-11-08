@@ -48,7 +48,7 @@ class Preset:
         return self.section["plugins_order"]
 
     def settings(self, effect_id):
-        return self.section.setdefault(effect_id, {})
+        return fill_defaults(self.section.setdefault(effect_id, {}), DEFAULTS.get(kind_of(effect_id), {}))
 
     def enabled(self, effect_id):
         return not self.settings(effect_id).get("bypass", False)
@@ -144,55 +144,87 @@ def wav_channels(path):
     return 0
 
 
-EQ_FREQUENCIES = (32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000)
+EQ_FREQUENCIES = (22.4, 27.8, 34.51, 42.82, 53.14, 65.95, 81.83, 101.55, 126.0, 156.38, 194.06, 240.81, 298.834,
+                  370.834, 460.182, 571.057, 708.647, 879.387, 1091.26, 1354.19, 1680.47, 2085.35, 2587.79,
+                  3211.29, 3985.01, 4945.15, 6136.63, 7615.17, 9449.96, 11726.8, 14552.2, 18058.4)
+MB_SPLITS = (500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0, 16000.0)
 
 
 def _eq_side():
     return {
-        f"band{i}": {"frequency": float(f), "gain": 0.0, "mode": "RLC (BT)", "mute": False, "q": 1.504760237537245,
-                     "slope": "x1", "solo": False, "type": "Bell", "width": 4.0}
+        f"band{i}": {"frequency": f, "gain": 0.0, "mode": "RLC (BT)", "mute": False, "q": 4.36, "slope": "x1",
+                     "solo": False, "type": "Bell", "width": 4.0}
         for i, f in enumerate(EQ_FREQUENCIES)
     }
 
 
-# Easy Effects' own defaults for a newly added effect.
+def _gains():
+    return {"bypass": False, "input-gain": 0.0, "output-gain": 0.0}
+
+
+def _mix():
+    return {key: -80.01 for key in ("input-to-link", "input-to-sidechain", "link-to-input", "link-to-sidechain",
+                                    "sidechain-to-input", "sidechain-to-link")}
+
+
+def _dynamics(sidechain_type):
+    return {**_gains(), **_mix(), "dry": -80.01, "wet": 0.0, "makeup": 0.0, "attack": 20.0, "release": 100.0,
+            "stereo-split": False, "hpf-mode": "Off", "hpf-frequency": 10.0, "lpf-mode": "Off",
+            "lpf-frequency": 20000.0,
+            "sidechain": {"type": sidechain_type, "mode": "Peak", "source": "Middle",
+                          "stereo-split-source": "Left/Right", "lookahead": 0.0, "reactivity": 10.0, "preamp": 0.0}}
+
+
+def _mb_band(i):
+    band = {"compression-mode": "Downward", "compressor-enable": True, "solo": False, "mute": False,
+            "attack-threshold": -12.0, "attack-time": 20.0, "release-threshold": -80.01, "release-time": 100.0,
+            "ratio": 1.0, "knee": -6.0, "makeup": 0.0, "boost-threshold": -72.0, "boost-amount": 6.0,
+            "sidechain-type": "Internal", "sidechain-mode": "RMS", "sidechain-source": "Middle",
+            "stereo-split-source": "Left/Right", "sidechain-lookahead": 0.0, "sidechain-reactivity": 10.0,
+            "sidechain-preamp": 0.0, "sidechain-custom-lowcut-filter": False,
+            "sidechain-custom-highcut-filter": False,
+            "sidechain-lowcut-frequency": MB_SPLITS[i - 1] if i else 10.0,
+            "sidechain-highcut-frequency": MB_SPLITS[i] if i < len(MB_SPLITS) else 20000.0}
+    if i:
+        band["enable-band"] = i <= 3
+        band["split-frequency"] = MB_SPLITS[i - 1]
+    return band
+
+
+# Easy Effects' own defaults for a newly added effect, from its kcfg files as of 8.3.2.
 DEFAULTS = {
-    "equalizer": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "mode": "IIR", "num-bands": 10,
-                  "split-channels": False, "balance": 0.0, "left": _eq_side(), "right": _eq_side()},
-    "limiter": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "mode": "Herm Thin",
-                "oversampling": "None", "dithering": "None", "threshold": -1.0, "attack": 5.0, "release": 5.0,
-                "lookahead": 5.0, "stereo-link": 100.0, "sidechain-preamp": 0.0, "gain-boost": True,
-                "alr": False, "alr-attack": 5.0, "alr-release": 50.0, "alr-knee": 0.0},
-    "compressor": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "mode": "Downward",
-                   "threshold": -12.0, "ratio": 4.0, "knee": -6.0, "attack": 20.0, "release": 100.0,
-                   "release-threshold": -80.01, "makeup": 0.0, "boost-threshold": -72.0, "boost-amount": 6.0,
-                   "dry": -80.01, "wet": 0.0, "hpf-mode": "Off", "hpf-frequency": 10.0, "lpf-mode": "Off",
-                   "lpf-frequency": 20000.0,
-                   "sidechain": {"type": "Feed-forward", "mode": "RMS", "source": "Middle",
-                                 "stereo-split-source": "Left/Right", "lookahead": 0.0, "reactivity": 10.0,
-                                 "preamp": 0.0}},
-    "expander": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "mode": "Upward", "threshold": -12.0,
-                 "ratio": 4.0, "knee": -6.0, "attack": 20.0, "release": 100.0, "release-threshold": -80.01,
-                 "makeup": 0.0, "dry": -80.01, "wet": 0.0, "hpf-mode": "Off", "hpf-frequency": 10.0,
-                 "lpf-mode": "Off", "lpf-frequency": 20000.0,
-                 "sidechain": {"type": "Internal", "mode": "RMS", "source": "Middle",
-                               "stereo-split-source": "Left/Right", "lookahead": 0.0, "reactivity": 10.0,
-                               "preamp": 0.0}},
-    "gate": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "curve-threshold": -24.0,
-             "curve-zone": -6.0, "hysteresis": False, "hysteresis-threshold": -12.0, "hysteresis-zone": -6.0,
-             "reduction": -24.0, "attack": 20.0, "release": 100.0, "makeup": 0.0, "dry": -80.01, "wet": 0.0,
-             "hpf-mode": "Off", "hpf-frequency": 10.0, "lpf-mode": "Off", "lpf-frequency": 20000.0,
-             "sidechain": {"type": "Internal", "mode": "RMS", "source": "Middle",
-                           "stereo-split-source": "Left/Right", "lookahead": 0.0, "reactivity": 10.0,
-                           "preamp": 0.0}},
-    "loudness": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "std": "ISO226-2003", "fft": "4096",
-                 "volume": -6.0, "clipping": False, "clipping-range": 6.0},
-    "autogain": {"bypass": False, "target": -23.0, "silence-threshold": -70.0, "maximum-gain": 36.0},
-    "maximizer": {"bypass": False, "threshold": 0.0, "ceiling": 0.0, "release": 25.0},
-    "deepfilternet": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "attenuation-limit": 100.0,
-                      "min-processing-threshold": -10.0, "max-erb-processing-threshold": 30.0,
-                      "max-df-processing-threshold": 20.0, "min-processing-buffer": 0, "post-filter-beta": 0.02},
-    "convolver": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0, "kernel-name": "", "ir-width": 100},
-    "multiband_compressor": {"bypass": False, "input-gain": 0.0, "output-gain": 0.0,
-                             "compressor-mode": "Modern", "envelope-boost": "None", "dry": -80.01, "wet": 0.0},
+    "equalizer": {**_gains(), "mode": "IIR", "num-bands": 32, "split-channels": False, "balance": 0.0,
+                  "left": _eq_side(), "right": _eq_side()},
+    "limiter": {**_gains(), **_mix(), "mode": "Herm Thin", "oversampling": "None", "dithering": "None",
+                "sidechain-type": "Internal", "threshold": 0.0, "attack": 5.0, "release": 5.0, "lookahead": 5.0,
+                "stereo-link": 100.0, "sidechain-preamp": 0.0, "gain-boost": True, "alr": False,
+                "alr-attack": 5.0, "alr-release": 50.0, "alr-knee": 0.0, "alr-knee-smooth": -5.0},
+    "compressor": {**_dynamics("Feed-forward"), "mode": "Downward", "threshold": -12.0, "ratio": 4.0,
+                   "knee": -6.0, "release-threshold": -80.01, "boost-threshold": -72.0, "boost-amount": 6.0},
+    "expander": {**_dynamics("Internal"), "mode": "Upward", "threshold": -12.0, "ratio": 4.0, "knee": -6.0,
+                 "release-threshold": -80.01},
+    "gate": {**_dynamics("Internal"), "curve-threshold": -24.0, "curve-zone": -6.0, "hysteresis": False,
+             "hysteresis-threshold": -12.0, "hysteresis-zone": -6.0, "reduction": -24.0},
+    "multiband_compressor": {**_gains(), **_mix(), "compressor-mode": "Modern", "envelope-boost": "None",
+                             "dry": -80.01, "wet": 0.0, "stereo-split": False,
+                             **{f"band{i}": _mb_band(i) for i in range(8)}},
+    "loudness": {**_gains(), "std": "ISO226-2023", "fft": "4096", "volume": 0.0, "clipping": False,
+                 "clipping-range": 6.0},
+    "autogain": {**_gains(), "target": -23.0, "silence-threshold": -70.0, "maximum-gain": 36.0},
+    "maximizer": {**_gains(), "threshold": 0.0, "ceiling": 0.0, "release": 25.0},
+    "bass_loudness": {**_gains(), "loudness": -3.1, "output": -6.0, "link": -9.1},
+    "deepfilternet": {**_gains(), "attenuation-limit": 100.0, "min-processing-threshold": -10.0,
+                      "max-erb-processing-threshold": 30.0, "max-df-processing-threshold": 20.0,
+                      "min-processing-buffer": 0, "post-filter-beta": 0.02},
+    "convolver": {**_gains(), "kernel-name": "", "ir-width": 100, "autogain": True, "dry": -100.0, "wet": 0.0},
 }
+
+
+def fill_defaults(settings, defaults):
+    """Adds the keys an older or hand-written preset lacks, so they read as Easy Effects would read them."""
+    for key, value in defaults.items():
+        if isinstance(value, dict) and isinstance(settings.get(key), dict):
+            fill_defaults(settings[key], value)
+        elif key not in settings:
+            settings[key] = copy.deepcopy(value)
+    return settings
