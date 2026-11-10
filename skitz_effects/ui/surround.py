@@ -1,9 +1,10 @@
 from pathlib import Path
 
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gtk
 
 from .. import presets
 from ..config import LAYOUTS as CHANNELS
+from .irs import import_ir
 from .rows import full_names
 
 LAYOUTS = (("stereo", "Stereo"), ("5.1", "5.1 Surround"), ("7.1", "7.1 Surround"))
@@ -46,7 +47,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         self.mode_row.connect("notify::selected", self._on_mode)
         self.add(self.mode_row)
         self.hrir_row = full_names(Adw.ComboRow(title="HRIR"))
-        choose = Gtk.Button(icon_name="document-open-symbolic", tooltip_text="Choose File",
+        choose = Gtk.Button(icon_name="document-open-symbolic", tooltip_text="Import HRIR",
                             valign=Gtk.Align.CENTER, css_classes=["flat"])
         choose.connect("clicked", self._on_choose)
         self.hrir_row.add_suffix(choose)
@@ -121,22 +122,12 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._apply()
 
     def _on_choose(self, _button):
-        wavs = Gtk.FileFilter(name="WAV files")
-        wavs.add_suffix("wav")
-        filters = Gio.ListStore.new(Gtk.FileFilter)
-        filters.append(wavs)
-        dialog = Gtk.FileDialog(title="Choose HRIR", filters=filters)
-        dialog.open(self.get_root(), None, self._on_chosen)
+        import_ir(self, "Import HRIR", lambda channels: channels == 14,
+                  "That file is not a 14-channel HeSuVi HRIR", self._on_imported)
 
-    def _on_chosen(self, dialog, result):
-        try:
-            path = dialog.open_finish(result).get_path()
-        except GLib.Error:
-            return
-        root = self.get_root()
-        if presets.wav_channels(path) != 14:
-            root.toast("That file is not a 14-channel HeSuVi HRIR")
-            return
-        self.controller.settings.hrir = path
+    def _on_imported(self, path, replaced):
+        self.controller.settings.hrir = str(path)
         self._fill_hrirs()
         self._apply()
+        if replaced:
+            self.controller.output.restart()

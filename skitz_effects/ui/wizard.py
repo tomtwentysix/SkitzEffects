@@ -3,6 +3,7 @@ from pathlib import Path
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import config, deps, presets
+from .irs import import_ir
 from .surround import LAYOUTS, hrir_choices
 
 
@@ -154,18 +155,27 @@ class SetupWizard(Adw.Dialog):
         self.layout_row = Adw.ComboRow(title="Channels", model=Gtk.StringList.new([t for _k, t in LAYOUTS]))
         self.layout_row.set_selected([k for k, _t in LAYOUTS].index(self.settings.layout))
         group.add(self.layout_row)
-        self.hrirs = hrir_choices(self.settings.hrir)
-        names = ["None", *self.hrirs]
         self.hrir_row = Adw.ComboRow(title="HRIR", subtitle="14-channel HeSuVi WAV files from your Easy Effects "
-                                     "impulse responses", model=Gtk.StringList.new(names))
-        paths = list(self.hrirs.values())
-        if self.settings.hrir in paths:
-            self.hrir_row.set_selected(paths.index(self.settings.hrir) + 1)
-        elif paths:
-            self.hrir_row.set_selected(1)
+                                     "impulse responses")
+        self._fill_hrirs(self.settings.hrir)
+        choose = Gtk.Button(icon_name="document-open-symbolic", tooltip_text="Import HRIR",
+                            valign=Gtk.Align.CENTER, css_classes=["flat"])
+        choose.connect("clicked", lambda b: import_ir(
+            b, "Import HRIR", lambda channels: channels == 14, "That file is not a 14-channel HeSuVi HRIR",
+            lambda path, _replaced: self._fill_hrirs(str(path))))
+        self.hrir_row.add_suffix(choose)
         group.add(self.hrir_row)
         page.add(group)
         return page
+
+    def _fill_hrirs(self, chosen):
+        self.hrirs = hrir_choices(chosen)
+        self.hrir_row.set_model(Gtk.StringList.new(["None", *self.hrirs]))
+        paths = list(self.hrirs.values())
+        if chosen in paths:
+            self.hrir_row.set_selected(paths.index(chosen) + 1)
+        elif paths:
+            self.hrir_row.set_selected(1)
 
     def _finish(self):
         page = Adw.PreferencesPage()

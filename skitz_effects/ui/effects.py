@@ -2,6 +2,7 @@ from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import plugins, presets
 from .eq import EqualizerEditor
+from .irs import import_ir
 from .rows import full_names, menu_row, param_row
 
 ADDABLE = [e for e in plugins.EFFECTS.values() if not e.missing]
@@ -206,20 +207,43 @@ class EffectsView(Adw.Bin):
 
     def _convolver_group(self, settings, on_change):
         group = Adw.PreferencesGroup(title="Impulse Response")
-        irs = presets.list_irs()
-        names = ["None", *irs]
-        current = settings.get("kernel-name", "")
-        row = full_names(Adw.ComboRow(title="Impulse response", model=Gtk.StringList.new(names),
-                                      enable_search=True))
-        if current in irs:
-            row.set_selected(names.index(current))
+        row = full_names(Adw.ComboRow(title="Impulse response", enable_search=True))
+        names = []
+        filling = False
+
+        def fill():
+            nonlocal filling
+            names[:] = ["None", *presets.list_irs()]
+            filling = True
+            row.set_model(Gtk.StringList.new(names))
+            current = settings.get("kernel-name", "")
+            row.set_selected(names.index(current) if current in names else 0)
+            filling = False
 
         def picked(r, _):
+            if filling:
+                return
             settings["kernel-name"] = "" if r.get_selected() == 0 else names[r.get_selected()]
             settings.pop("kernel-path", None)
             on_change(True)
 
+        def imported(path, replaced):
+            settings["kernel-name"] = path.stem
+            settings.pop("kernel-path", None)
+            fill()
+            on_change(True)
+            if replaced:
+                # The config is unchanged, so only a restart loads the new file.
+                self.pipeline.restart()
+
+        fill()
         row.connect("notify::selected", picked)
+        button = Gtk.Button(icon_name="document-open-symbolic", tooltip_text="Import Impulse Response",
+                            valign=Gtk.Align.CENTER, css_classes=["flat"])
+        button.connect("clicked", lambda b: import_ir(
+            b, "Import Impulse Response", lambda channels: channels in (1, 2, 4),
+            "Impulse responses must be mono, stereo or 4-channel true stereo WAV files", imported))
+        row.add_suffix(button)
         group.add(row)
         return group
 

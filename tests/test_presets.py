@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from skitz_effects import presets
 
 from .conftest import write_wav
@@ -119,3 +121,18 @@ def test_new_effects_do_not_share_default_objects(ee_root):
     assert preset.settings(second)["left"]["band0"]["gain"] == 0.0
     assert presets.DEFAULTS["equalizer"]["left"]["band0"]["gain"] == 0.0
     assert len(presets.DEFAULTS["equalizer"]["left"]) == presets.DEFAULTS["equalizer"]["num-bands"] == 10
+
+
+def test_importing_an_ir_copies_it_into_the_shared_folder(ee_root, tmp_path):
+    source = tmp_path / "Room.wav"
+    source.write_bytes(b"one")
+    dest = presets.import_ir(source)
+    assert dest == presets.ir_dir() / "Room.wav"
+    assert dest.read_bytes() == b"one"
+    assert presets.list_irs()["Room"] == dest
+    source.write_bytes(b"two")
+    with pytest.raises(FileExistsError):
+        presets.import_ir(source)
+    presets.import_ir(source, replace=True)
+    assert dest.read_bytes() == b"two"
+    assert presets.import_ir(dest) == dest

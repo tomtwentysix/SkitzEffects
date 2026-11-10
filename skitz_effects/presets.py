@@ -7,6 +7,7 @@ A preset file is {"output": {"plugins_order": ["equalizer#0", ...],
 
 import copy
 import json
+import shutil
 import struct
 from pathlib import Path
 
@@ -126,6 +127,28 @@ def list_irs():
             if path.suffix.lower() in (".irs", ".wav"):
                 found.setdefault(path.stem, path)
     return dict(sorted(found.items(), key=lambda kv: kv[0].casefold()))
+
+
+def ir_dir():
+    return roots()[0] / "irs"
+
+
+def import_ir(source, replace=False):
+    """Copies a WAV into the shared IR folder and returns the copy's path.
+
+    Raises FileExistsError when another file already has its name, unless replace is set.
+    """
+    source = Path(source)
+    dest = ir_dir() / f"{source.stem}.wav"
+    if dest.exists() and dest.samefile(source):
+        return dest
+    if dest.exists() and not replace:
+        raise FileExistsError(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".tmp")
+    shutil.copyfile(source, tmp)
+    tmp.replace(dest)
+    return dest
 
 
 def wav_channels(path):

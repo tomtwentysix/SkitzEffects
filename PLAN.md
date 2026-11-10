@@ -116,7 +116,9 @@ Midas UMC22 and the user's own presets.
 - Done: Channel Levels (Devices → Surround): a gain per channel on the HRIR's inlets, applied live,
   for a louder centre or a quieter LFE. Effects stay after the downmix, where one stereo copy runs
   and the limiter guards the summed output.
-- HRIR library management: import WAVs into Skitz Effects' IR folder and show the channel count.
+- Done: Import buttons on the HRIR and Convolver pickers copy a WAV into the shared Easy Effects
+  `irs` folder (checked for 14 or 1/2/4 channels, asking before replacing a file of the same name),
+  so presets keep naming IRs by file name and both apps see them.
 
 ### M5: Release
 - App icon (PNG sizes, symbolic), metainfo, screenshots, README, COPR repo like Superlion's.
