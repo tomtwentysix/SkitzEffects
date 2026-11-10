@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.15
+Version:        1.0.16
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,9 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Tue Nov 10 2026 Tom <tom@solarflareit.co.uk> - 1.0.16-1
+- Choosing an output device in Skitz Effects sticks instead of jumping back to the previous one.
+
 * Tue Nov 10 2026 Tom <tom@solarflareit.co.uk> - 1.0.15-1
 - Impulse responses and HRIRs can be imported from the Convolver effect, Devices → Surround and the
   setup wizard. The file is copied into the Easy Effects impulse response folder, so both apps see it.
