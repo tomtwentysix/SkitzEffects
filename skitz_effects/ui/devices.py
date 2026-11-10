@@ -70,28 +70,22 @@ class DevicesPage(Adw.PreferencesPage):
         return group
 
     def _known(self, pipeline):
-        """Connected devices and remembered ones, as {name: (description, connected)}."""
-        state = pipeline.state
-        known = {d.name: (pipeline.display_name(d), True) for d in pipeline.devices()}
-        for name, description in state["device_names"].items():
-            known.setdefault(name, (description, False))
-        for name in state["device_presets"]:
-            known.setdefault(name, (name, False))
-        return known
+        """Connected devices as {name: description}; settings for others are kept until they return."""
+        return {d.name: pipeline.display_name(d) for d in pipeline.devices()}
 
     def _device_list(self, pipeline):
         group = Adw.PreferencesGroup(title=TITLES[pipeline.direction][1])
         known = self._known(pipeline)
-        for name, (description, connected) in sorted(known.items(), key=lambda kv: kv[1][0].casefold()):
-            row = Adw.ActionRow(title=description, subtitle=self._summary(pipeline, name, connected),
+        for name, description in sorted(known.items(), key=lambda kv: kv[1].casefold()):
+            row = Adw.ActionRow(title=description, subtitle=self._summary(pipeline, name),
                                 activatable=True)
             row.add_suffix(Gtk.Image(icon_name="go-next-symbolic"))
             row.connect("activated", lambda _r, n=name: self._open(pipeline, n))
             group.add(row)
         return group
 
-    def _summary(self, pipeline, name, connected):
-        parts = [] if connected else ["Not connected"]
+    def _summary(self, pipeline, name):
+        parts = []
         preset = pipeline.state["device_presets"].get(name)
         if preset:
             parts.append(f"{preset} preset")
@@ -101,7 +95,7 @@ class DevicesPage(Adw.PreferencesPage):
         return " · ".join(parts) or "Default settings"
 
     def _open(self, pipeline, name):
-        description = self._known(pipeline).get(name, (name, False))[0]
+        description = self._known(pipeline).get(name, name)
         DeviceSettings(self, pipeline, name, description).present(self.get_root())
 
 
