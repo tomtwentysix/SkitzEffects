@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.13
+Version:        1.0.14
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Tue Nov 10 2026 Tom <tom@solarflareit.co.uk> - 1.0.14-1
+- Devices → Surround has Channel Levels, a level for each surround channel before the HRIR, such as
+  a louder centre for dialogue or a quieter subwoofer. Changes apply while audio plays.
+
 * Sun Nov 08 2026 Tom <tom@solarflareit.co.uk> - 1.0.13-1
 - The microphone effects run at 48 kHz whatever rate the output runs at, so Deep Noise Remover,
   which supports only 48 kHz, no longer silences the microphone.
