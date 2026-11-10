@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.14
+Version:        1.0.15
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Tue Nov 10 2026 Tom <tom@solarflareit.co.uk> - 1.0.15-1
+- Impulse responses and HRIRs can be imported from the Convolver effect, Devices → Surround and the
+  setup wizard. The file is copied into the Easy Effects impulse response folder, so both apps see it.
+- The Devices page lists only connected devices; settings for the others are kept.
+
 * Tue Nov 10 2026 Tom <tom@solarflareit.co.uk> - 1.0.14-1
 - Devices → Surround has Channel Levels, a level for each surround channel before the HRIR, such as
   a louder centre for dialogue or a quieter subwoofer. Changes apply while audio plays.
