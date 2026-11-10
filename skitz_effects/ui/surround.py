@@ -3,6 +3,7 @@ from pathlib import Path
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import presets
+from ..config import LAYOUTS as CHANNELS
 from .rows import full_names
 
 LAYOUTS = (("stereo", "Stereo"), ("5.1", "5.1 Surround"), ("7.1", "7.1 Surround"))
@@ -12,6 +13,8 @@ ROUTES = {
     "hrir": "Downmixed to stereo through the HRIR",
     "stereo": "Mixed down to stereo without an HRIR",
 }
+CHANNEL_TITLES = {"FL": "Front Left", "FR": "Front Right", "FC": "Centre", "LFE": "Subwoofer",
+                  "RL": "Rear Left", "RR": "Rear Right", "SL": "Side Left", "SR": "Side Right"}
 
 
 def hrir_choices(current=""):
@@ -50,6 +53,10 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._fill_hrirs()
         self.hrir_row.connect("notify::selected", self._on_hrir)
         self.add(self.hrir_row)
+        self.levels_row = Adw.ExpanderRow(title="Channel Levels", subtitle="Applied before the HRIR")
+        self.add(self.levels_row)
+        self._level_rows = []
+        self._fill_levels()
 
         controller.output.connect("state-changed", lambda *_: self.refresh())
         controller.connect("devices-changed", lambda *_: self.refresh())
@@ -65,6 +72,22 @@ class SurroundGroup(Adw.PreferencesGroup):
             self.hrir_row.set_selected(paths.index(self.controller.settings.hrir) + 1)
         self._filling = False
 
+    def _fill_levels(self):
+        for row in self._level_rows:
+            self.levels_row.remove(row)
+        settings = self.controller.settings
+        positions = CHANNELS[settings.layout] if settings.layout != "stereo" else ()
+        self._level_rows = []
+        for ch in positions:
+            adjustment = Gtk.Adjustment(lower=-12, upper=12, step_increment=0.5, page_increment=3,
+                                        value=settings.surround_levels.get(ch, 0))
+            row = Adw.SpinRow(title=CHANNEL_TITLES[ch], subtitle="dB", adjustment=adjustment, digits=1)
+            row.connect("notify::value", lambda r, _, ch=ch: self.controller.output.set_surround_level(
+                ch, round(r.get_value(), 1)))
+            self.levels_row.add_row(row)
+            self._level_rows.append(row)
+        self.levels_row.set_visible(bool(positions))
+
     def refresh(self):
         sink = self.controller.output.device
         route = ROUTES.get(self.controller.output.route, "Not running")
@@ -74,6 +97,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         if self.controller.output.route == "stereo" and not self.controller.hrir_ok() and settings.downmix != "never":
             route += " (choose an HRIR to place the surround channels)"
         self.route_row.set_subtitle(route)
+        self.levels_row.set_sensitive(self.controller.output.route == "hrir")
 
     def _apply(self):
         self.controller.settings.save()
@@ -82,6 +106,7 @@ class SurroundGroup(Adw.PreferencesGroup):
 
     def _on_layout(self, row, _):
         self.controller.settings.layout = LAYOUTS[row.get_selected()][0]
+        self._fill_levels()
         self._apply()
 
     def _on_mode(self, row, _):

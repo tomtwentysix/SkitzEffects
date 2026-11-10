@@ -77,8 +77,8 @@ class Graph:
     def link(self, out, into):
         self.links.append({"output": out, "input": into})
 
-    def inlet(self, name):
-        return self.add(type="builtin", label="linear", name=name, control={"Mult": 1.0, "Add": DENORMAL_GUARD})
+    def inlet(self, name, mult=1.0):
+        return self.add(type="builtin", label="linear", name=name, control={"Mult": mult, "Add": DENORMAL_GUARD})
 
     def mixer(self, name, sources):
         self.add(type="builtin", label="mixer", name=name)
@@ -152,11 +152,12 @@ HRIR_TAIL = 32768
 HRIR_LENGTH = 2048
 
 
-def hrir_downmix(graph, layout, hrir):
+def hrir_downmix(graph, layout, hrir, levels=None):
+    """levels maps a channel to its gain in dB before the HRIR places it."""
     remap = HRIR_SOURCE.get(layout, {})
     left, right = [], []
     for ch in LAYOUTS[layout]:
-        src = graph.inlet(f"in_{ch}")
+        src = graph.inlet(f"in_{ch}", db((levels or {}).get(ch, 0)))
         ir_l, ir_r = HESUVI[remap.get(ch, ch)]
         left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out", tailsize=HRIR_TAIL,
                                     length=HRIR_LENGTH))
@@ -164,6 +165,11 @@ def hrir_downmix(graph, layout, hrir):
                                      length=HRIR_LENGTH))
     inputs = [f"in_{ch}:In" for ch in LAYOUTS[layout]]
     return inputs, graph.mixer("hrir_mix_l", left), graph.mixer("hrir_mix_r", right)
+
+
+def level_controls(layout, levels):
+    """Control updates that apply surround levels to a running HRIR chain."""
+    return {f"in_{ch}:Mult": db(levels.get(ch, 0)) for ch in LAYOUTS[layout]}
 
 
 def effect_chain(preset, enabled):
@@ -284,10 +290,10 @@ def channels(positions):
     return {"audio.channels": len(positions), "audio.position": list(positions)}
 
 
-def build(preset, enabled, route, layout, hrir, target):
+def build(preset, enabled, route, layout, hrir, target, levels=None):
     graph = Graph()
     if route == "hrir":
-        inputs, left, right = hrir_downmix(graph, layout, hrir)
+        inputs, left, right = hrir_downmix(graph, layout, hrir, levels)
     else:
         inputs, left, right = plain_inputs(graph)
     stages = staged((graph, inputs, left, right), effect_chain(preset, enabled), route == "hrir")

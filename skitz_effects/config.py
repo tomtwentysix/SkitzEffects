@@ -51,6 +51,8 @@ class Settings:
     # "auto" downmixes with the HRIR only when the device has fewer channels than the layout.
     downmix: str = "auto"
     hrir: str = ""
+    # Gain in dB per channel before the HRIR, such as {"FC": 3.0}.
+    surround_levels: dict = field(default_factory=dict)
     run_in_background: bool = True
     # Only applies to the launch at login.
     start_minimised: bool = True

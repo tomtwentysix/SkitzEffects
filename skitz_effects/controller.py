@@ -413,7 +413,7 @@ class Pipeline(GObject.Object):
             return "stereo", graph.build_input(self.preset, enabled, device.name, channel, device.positions)
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
-        return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name)
+        return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name, s.surround_levels)
 
     def _check_rate(self):
         """Restarts the chain when its device changes rate under it.
@@ -502,6 +502,21 @@ class Pipeline(GObject.Object):
             # The running chain now matches the edited preset, so it needs no restart.
             if self.device:
                 self._conf = self._build(self.device)[1]
+
+    def set_surround_level(self, channel, gain):
+        s = self.controller.settings
+        if gain:
+            s.surround_levels[channel] = gain
+        else:
+            s.surround_levels.pop(channel, None)
+        s.save()
+        if self.route != "hrir" or not self.chain_running:
+            self.queue_rebuild()
+            return
+        # The HRIR is the chain's first step, so its controls sit on the chain's own capture node.
+        self.pw.set_controls(self.control_node, graph.level_controls(s.layout, s.surround_levels))
+        if self.device:
+            self._conf = self._build(self.device)[1]
 
     def shutdown(self):
         self._flush_save()

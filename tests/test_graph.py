@@ -319,3 +319,14 @@ def test_no_chain_outputs_straight_from_an_input(ee_root, lv2):
             inlets = {port.split(":")[0] for port in g["inputs"] if port}
             assert not inlets & {port.split(":")[0] for port in g["outputs"]}
             assert {port.split(":")[0] for port in g["outputs"]} <= node_names(module)
+
+
+def test_surround_levels_set_each_channels_gain_before_the_hrir(ee_root, lv2):
+    args = chain_args(graph.build(None, True, "hrir", "7.1", HRIR, TARGET, {"FC": 6.0}))
+    nodes = {n["name"]: n for n in args["filter.graph"]["nodes"]}
+    assert nodes["in_FC"]["control"]["Mult"] == pytest.approx(10 ** (6 / 20))
+    assert nodes["in_FL"]["control"]["Mult"] == 1.0
+    assert nodes["in_FC"]["control"]["Add"] == graph.DENORMAL_GUARD
+    live = graph.level_controls("7.1", {"FC": 6.0})
+    assert live["in_FC:Mult"] == nodes["in_FC"]["control"]["Mult"]
+    assert set(live) == {f"in_{ch}:Mult" for ch in LAYOUTS["7.1"]}

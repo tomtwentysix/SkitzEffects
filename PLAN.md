@@ -113,6 +113,9 @@ Midas UMC22 and the user's own presets.
 - Per-device downmix override: USB headsets that report 7.1 can be set to always use the HRIR,
   while the global setting stays the default.
 - Speaker test: play a tone on each channel through the chain.
+- Done: Channel Levels (Devices → Surround): a gain per channel on the HRIR's inlets, applied live,
+  for a louder centre or a quieter LFE. Effects stay after the downmix, where one stereo copy runs
+  and the limiter guards the summed output.
 - HRIR library management: import WAVs into Skitz Effects' IR folder and show the channel count.
 
 ### M5: Release
