@@ -61,7 +61,7 @@ class DevicesPage(Adw.PreferencesPage):
             current = pipeline.device
             if current and current.name in ids:
                 row.set_selected(ids.index(current.name))
-            row.connect("notify::selected", lambda r, _, p=pipeline, i=ids: p.select_device(i[r.get_selected()]))
+            row.connect("notify::selected", lambda r, _, p=pipeline, i=ids: p.choose_device(i[r.get_selected()]))
             settings = Gtk.Button(icon_name="document-properties-symbolic", tooltip_text="Device Settings",
                                   valign=Gtk.Align.CENTER, css_classes=["flat"])
             settings.connect("clicked", lambda _b, p=pipeline: p.device and self._open(p, p.device.name))

@@ -318,9 +318,22 @@ class Pipeline(GObject.Object):
         self._queue_save()
         self._route_streams()
 
-    def select_device(self, name):
+    def choose_device(self, name):
+        """A device picked in Skitz Effects, made the default as GNOME would make it.
+
+        Renaming the output sink means recreating it, and while it is gone GNOME and WirePlumber put
+        back the device they last knew of, which sync() would then follow. Choosing the device itself
+        first makes that the one they put back; sync() then hands the default to the sink as usual.
+        """
+        if self.direction == "output" and self.pw:
+            self.pw.set_default(name)
+            self.select_device(name, claim_default=False)
+        else:
+            self.select_device(name)
+
+    def select_device(self, name, claim_default=True):
         target = self.virtual if self.direction == "output" else name
-        if self.pw and self.pw.default(self.media_class) != target:
+        if claim_default and self.pw and self.pw.default(self.media_class) != target:
             self.pw.set_default(target)
         if name == self.state["device"]:
             return

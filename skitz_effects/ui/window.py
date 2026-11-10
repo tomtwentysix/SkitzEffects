@@ -168,7 +168,7 @@ class SkitzEffectsWindow(Adw.ApplicationWindow):
 
     def _on_device_activated(self, _list, row):
         self.devices_button.popdown()
-        self.pipeline.select_device(row.device)
+        self.pipeline.choose_device(row.device)
 
     def show_preferences(self):
         from .preferences import PreferencesDialog
