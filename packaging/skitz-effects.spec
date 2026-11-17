@@ -11,7 +11,7 @@ Obsoletes:      soundstage <= 0.1.0
 BuildRequires:  desktop-file-utils
 
 Requires:       python3
-Requires:       python3-gobject-base
+Requires:       python3-gobject
 Requires:       python3-numpy
 Requires:       gtk4
 Requires:       libadwaita
