@@ -70,7 +70,7 @@ class Conflict:
         return [folder / name for name in self.autostart if (folder / name).exists() and not _hidden(folder / name)]
 
     def running(self):
-        if self.flatpak:
+        if self.flatpak and shutil.which("flatpak"):
             out = subprocess.run(["flatpak", "ps", "--columns=application"], capture_output=True, text=True).stdout
             if self.flatpak in out.split():
                 return True
@@ -90,7 +90,7 @@ class Conflict:
                 entry["Desktop Entry"]["Hidden"] = "true"
                 with open(path, "w") as f:
                     entry.write(f, space_around_delimiters=False)
-        if self.flatpak:
+        if self.flatpak and shutil.which("flatpak"):
             subprocess.run(["flatpak", "kill", self.flatpak], capture_output=True)
         if self.process:
             subprocess.run(["pkill", "-x", self.process], capture_output=True)

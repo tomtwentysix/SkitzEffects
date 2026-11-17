@@ -26,12 +26,25 @@ def lv2(tmp_path, monkeypatch):
     lib = tmp_path / "lv2"
     for bundle in ("lsp-plugins.lv2", "ZaMaximX2.lv2", "mda.lv2"):
         (lib / bundle).mkdir(parents=True)
+        write_manifest(lib / bundle, [e.uri for e in plugins.EFFECTS.values() if e.bundle == bundle])
     ladspa = tmp_path / "ladspa"
     ladspa.mkdir()
     (ladspa / "libdeep_filter_ladspa.so").touch()
     monkeypatch.setattr(plugins, "LV2_DIRS", [lib])
     monkeypatch.setattr(plugins, "LADSPA_DIRS", [ladspa])
     return lib
+
+
+def write_manifest(bundle, uris):
+    """A manifest.ttl naming each plugin as real ones do: LSP and MDA by prefix, others in full."""
+    lines = []
+    for uri in uris:
+        prefix, _, name = uri.rpartition("/")
+        if prefix.startswith(("http://lsp-plug.in", "http://drobilla.net")):
+            lines += [f"@prefix plug: <{prefix}/> .", f"plug:{name}", f"    rdfs:seeAlso <{name}.ttl> ."]
+        else:
+            lines += [f"<{uri}>", "    a lv2:Plugin ."]
+    (bundle / "manifest.ttl").write_text("\n".join(lines) + "\n")
 
 
 def write_wav(path, channels, rate=48000):

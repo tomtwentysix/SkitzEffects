@@ -1,6 +1,10 @@
+import shutil
+
 import pytest
 
 from skitz_effects import graph, plugins, presets
+
+from .conftest import write_manifest
 
 
 def test_equalizer_from_the_dali_preset(ee_root):
@@ -112,6 +116,19 @@ def test_availability_follows_installed_bundles(lv2):
     assert plugins.effect("bass_loudness").available()
     assert plugins.effect("convolver").available()
     assert not plugins.effect("exciter").available()
-    (lv2 / "mda.lv2").rmdir()
+    shutil.rmtree(lv2 / "mda.lv2")
     assert not plugins.effect("bass_loudness").available()
     assert plugins.effect("no_such_thing").missing == "Unknown effect"
+
+
+def test_availability_needs_the_plugin_itself_in_the_bundle(lv2):
+    # Debian bookworm's LSP 1.2.5 has the bundle but no Autogain.
+    others = [e.uri for e in plugins.EFFECTS.values() if e.bundle == "lsp-plugins.lv2" and e.kind != "autogain"]
+    write_manifest(lv2 / "lsp-plugins.lv2", others)
+    assert not plugins.effect("autogain").available()
+    assert plugins.effect("compressor").available()
+
+
+def test_a_plugin_name_inside_a_longer_one_does_not_count(lv2):
+    write_manifest(lv2 / "lsp-plugins.lv2", [plugins.LSP + "sc_mb_compressor_stereo"])
+    assert not plugins.effect("compressor").available()

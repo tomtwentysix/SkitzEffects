@@ -5,7 +5,9 @@ objects) to an LV2 control port symbol. Easy Effects stores gains in dB, while
 the LSP plugins take linear gain, hence the "db" kind.
 """
 
+import functools
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -21,6 +23,20 @@ LADSPA_DIRS = [Path(p) for p in os.environ.get("LADSPA_PATH", "").split(":") if 
     Path("/usr/lib/ladspa"),
     Path("/usr/local/lib/ladspa"),
 ]
+
+def manifest(bundle):
+    """The text of an installed LV2 bundle's manifest.ttl, which names every plugin in it; "" if absent."""
+    for d in LV2_DIRS:
+        path = d / bundle / "manifest.ttl"
+        if path.is_file():
+            return _read(path, path.stat().st_mtime)
+    return ""
+
+
+@functools.lru_cache(maxsize=8)
+def _read(path, _mtime):
+    return path.read_text(errors="ignore")
+
 
 LSP = "http://lsp-plug.in/plugins/lv2/"
 LSP_PORTS = ("in_l", "in_r", "out_l", "out_r")
@@ -72,7 +88,12 @@ class Effect:
             return True
         if self.ladspa:
             return any((d / f"{self.ladspa}.so").is_file() for d in LADSPA_DIRS)
-        return bool(self.bundle) and any((d / self.bundle).is_dir() for d in LV2_DIRS)
+        if not self.bundle:
+            return False
+        # Manifests name a plugin by prefix (plug:compressor_stereo) or in full (<urn:zamaudio:ZaMaximX2>);
+        # the name must end there, so compressor_stereo does not match sc_compressor_stereo.
+        name = re.split(r"[/:#]", self.uri)[-1]
+        return bool(re.search(rf"[/:#]{re.escape(name)}(>|\s)", manifest(self.bundle)))
 
     def controls(self, data):
         if self.custom:
