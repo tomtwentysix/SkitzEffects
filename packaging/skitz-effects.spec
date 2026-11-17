@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.16
+Version:        1.0.17
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,12 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Tue Nov 17 2026 Tom <tom@solarflareit.co.uk> - 1.0.17-1
+- An effect whose plugin is missing from an installed bundle shows as unavailable instead of stopping
+  the whole effects chain.
+- Skitz Effects no longer fails on systems without Flatpak.
+- Requires python3-gobject, which provides the cairo bindings the analyser and EQ curve draw with.
+
 * Tue Nov 10 2026 Tom <tom@solarflareit.co.uk> - 1.0.16-1
 - Choosing an output device in Skitz Effects sticks instead of jumping back to the previous one.
 
