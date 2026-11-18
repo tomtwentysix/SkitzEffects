@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.17
+Version:        1.0.18
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -58,6 +58,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Wed Nov 18 2026 Tom <tom@solarflareit.co.uk> - 1.0.18-1
+- The HRIR downmix leaves the same headroom as PipeWire's own stereo downmix, so 5.1 and 7.1 games
+  no longer reach the effects about 9 dB hotter than stereo and break up in the low end. Surround
+  levels lowered to work around this can go back to where they were.
+
 * Tue Nov 17 2026 Tom <tom@solarflareit.co.uk> - 1.0.17-1
 - An effect whose plugin is missing from an installed bundle shows as unavailable instead of stopping
   the whole effects chain.
