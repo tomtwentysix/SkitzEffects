@@ -1,3 +1,4 @@
+import math
 import json
 
 import pytest
@@ -201,7 +202,7 @@ def test_every_input_is_guarded_against_denormals(text):
         for port in filter(None, g["inputs"]):
             node = nodes[port.split(":")[0]]
             assert node["label"] == "linear"
-            assert node["control"] == {"Mult": 1.0, "Add": graph.DENORMAL_GUARD}
+            assert node["control"]["Add"] == graph.DENORMAL_GUARD
 
 
 def test_chains_never_ask_for_realtime():
@@ -324,9 +325,17 @@ def test_no_chain_outputs_straight_from_an_input(ee_root, lv2):
 def test_surround_levels_set_each_channels_gain_before_the_hrir(ee_root, lv2):
     args = chain_args(graph.build(None, True, "hrir", "7.1", HRIR, TARGET, {"FC": 6.0}))
     nodes = {n["name"]: n for n in args["filter.graph"]["nodes"]}
-    assert nodes["in_FC"]["control"]["Mult"] == pytest.approx(10 ** (6 / 20))
-    assert nodes["in_FL"]["control"]["Mult"] == 1.0
+    headroom = graph.HRIR_HEADROOM["7.1"]
+    assert nodes["in_FC"]["control"]["Mult"] == pytest.approx(10 ** (6 / 20) * headroom)
+    assert nodes["in_FL"]["control"]["Mult"] == pytest.approx(headroom)
     assert nodes["in_FC"]["control"]["Add"] == graph.DENORMAL_GUARD
     live = graph.level_controls("7.1", {"FC": 6.0})
     assert live["in_FC:Mult"] == nodes["in_FC"]["control"]["Mult"]
     assert set(live) == {f"in_{ch}:Mult" for ch in LAYOUTS["7.1"]}
+
+
+def test_the_hrir_downmix_leaves_the_same_headroom_as_pipewires(ee_root, lv2):
+    # PipeWire's 7.1 downmix: FL + 0.707 (FC + SL + RL), normalised; about -9.9 dB.
+    assert 20 * math.log10(graph.HRIR_HEADROOM["7.1"]) == pytest.approx(-9.9, abs=0.1)
+    assert 20 * math.log10(graph.HRIR_HEADROOM["5.1"]) == pytest.approx(-7.7, abs=0.1)
+    assert graph.level_controls("5.1", {})["in_FL:Mult"] == pytest.approx(graph.HRIR_HEADROOM["5.1"])
