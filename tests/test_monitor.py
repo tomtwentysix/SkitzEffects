@@ -23,7 +23,7 @@ def test_tick_counts_overs_and_keeps_the_largest_peak():
 
 def test_tick_ignores_energy_while_the_input_is_quiet():
     before, readings = check.Reading(), {"a": check.Reading()}
-    monitor.tick(before, readings, sample(0.01, -70), {"a": sample(1.5, -70)})
+    monitor.tick(before, readings, sample(0.01, -70), {"a": sample(1.5, -20)})
     for reading in (before, readings["a"]):
         assert (reading.energy, reading.frames) == (0.0, 0)
     assert readings["a"].overs == 1
@@ -31,6 +31,12 @@ def test_tick_ignores_energy_while_the_input_is_quiet():
     for reading in (before, readings["a"]):
         assert reading.frames == 1000
         assert sqrt(reading.energy / (2 * reading.frames)) == pytest.approx(0.1)
+
+
+def test_tick_counts_a_silent_stage_while_the_input_plays():
+    before, readings = check.Reading(), {"a": check.Reading()}
+    monitor.tick(before, readings, sample(0.2, -20), {"a": (0.0, 0.0, 480)})
+    assert (readings["a"].energy, readings["a"].frames) == (0.0, 480)
 
 
 def test_tick_leaves_a_stage_without_a_sample_alone():

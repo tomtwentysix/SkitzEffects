@@ -25,9 +25,10 @@ def _add(reading, sample, active):
 
 
 def tick(before, readings, before_sample, samples):
+    active = _active(before_sample)
     for key, sample in samples.items():
-        _add(readings[key], sample, _active(sample))
-    _add(before, before_sample, _active(before_sample))
+        _add(readings[key], sample, active)
+    _add(before, before_sample, active)
 
 
 class Check(GObject.Object):
