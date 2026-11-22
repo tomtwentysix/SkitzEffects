@@ -150,9 +150,10 @@ HRIR_TAIL = 32768
 # first 2048 samples and the rest is over 55 dB down. Cutting it there keeps 16 convolvers cheap
 # enough to run without crackling, at 96 kHz too.
 HRIR_LENGTH = 2048
-# PipeWire's own downmix to stereo divides by 1 + 0.707 for each centre or surround channel reaching
-# an ear, so a sound in every channel cannot clip. Without the same here, a 7.1 game reached the
-# effects about 9 dB hotter than in stereo and pushed presets tuned for stereo into breaking up.
+# Each ear sums its front channel with 0.707 of every centre or surround channel, as a matrix downmix
+# would, so a sound in every channel can reach about 3.1 times full scale. Dividing by that sum keeps
+# it from clipping. Without it, a 7.1 game broke up through the HRIR alone. PipeWire's own downmix
+# does not do this by default (channelmix.normalize is off), so it is louder than this route.
 HRIR_HEADROOM = {"5.1": 1 / (1 + 2 * 0.707), "7.1": 1 / (1 + 3 * 0.707)}
 
 

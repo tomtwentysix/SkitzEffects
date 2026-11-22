@@ -334,8 +334,8 @@ def test_surround_levels_set_each_channels_gain_before_the_hrir(ee_root, lv2):
     assert set(live) == {f"in_{ch}:Mult" for ch in LAYOUTS["7.1"]}
 
 
-def test_the_hrir_downmix_leaves_the_same_headroom_as_pipewires(ee_root, lv2):
-    # PipeWire's 7.1 downmix: FL + 0.707 (FC + SL + RL), normalised; about -9.9 dB.
+def test_the_hrir_downmix_leaves_headroom_for_every_channel(ee_root, lv2):
+    # A 7.1 ear hears FL + 0.707 (FC + SL + RL); normalised, about -9.9 dB.
     assert 20 * math.log10(graph.HRIR_HEADROOM["7.1"]) == pytest.approx(-9.9, abs=0.1)
     assert 20 * math.log10(graph.HRIR_HEADROOM["5.1"]) == pytest.approx(-7.7, abs=0.1)
     assert graph.level_controls("5.1", {})["in_FL:Mult"] == pytest.approx(graph.HRIR_HEADROOM["5.1"])
