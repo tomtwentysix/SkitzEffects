@@ -97,6 +97,8 @@ class Tap:
         self.channels = len(positions)
         self.buffer = np.zeros((FFT, self.channels), np.float32)
         self.peak = np.zeros(self.channels, np.float32)
+        self.energy = 0.0
+        self.frames = 0
         self.last = 0.0
         self._partial = b""
         self._watch = GLib.io_add_watch(self.fd, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP, self._on_data)
@@ -122,6 +124,8 @@ class Tap:
         frames = np.frombuffer(data[:usable], np.float32).reshape(-1, self.channels)
         if len(frames):
             self.peak = np.maximum(self.peak, np.abs(frames).max(axis=0))
+            self.energy += float(np.square(frames[:, :2]).sum())
+            self.frames += len(frames)
             self.buffer = np.concatenate((self.buffer, frames))[-FFT:]
             self.last = time.monotonic()
         return True
@@ -129,6 +133,12 @@ class Tap:
     def take_peak(self):
         peak, self.peak = self.peak, np.zeros(self.channels, np.float32)
         return peak
+
+    def take_energy(self):
+        """(sum of squares of the first two channels, frame count) since the last call."""
+        energy, frames = self.energy, self.frames
+        self.energy, self.frames = 0.0, 0
+        return energy, frames
 
     def quiet(self):
         """True once the tap has had nothing for a moment: passive taps go silent rather than stop."""
