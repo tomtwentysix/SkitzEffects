@@ -5,6 +5,7 @@ from gi.repository import Adw, Gtk
 from .. import check, monitor
 
 CUT_LABELS = {"output-gain": "Output gain", "surround": "Surround levels", "ceiling": "Ceiling", "volume": "Volume"}
+LIVE_INTERVAL = 0.25
 
 
 def _db(value):
@@ -30,8 +31,8 @@ def change_text(stage, change, layout):
 
 def cut_text(cut):
     if cut.control == "target":
-        return f"Target {cut.db:.1f} LUFS, applied gradually"
-    return f"{CUT_LABELS[cut.control]} {_db(cut.db)}"
+        return f"Target lowered by {-cut.db:.1f} LU, applied gradually"
+    return f"{CUT_LABELS[cut.control]} lowered by {_db(-cut.db)}"
 
 
 def input_text(before):
@@ -57,6 +58,8 @@ class CheckDialog(Adw.Dialog):
         self.check = None
         self.cuts = []
         self.rows = {}
+        self._relabelled = 0.0
+        self._watch = []
 
         self.heading = Adw.WindowTitle(title="Distortion Check", subtitle=pipeline.preset.name)
         self.header = Adw.HeaderBar(title_widget=self.heading, show_start_title_buttons=False,
@@ -72,8 +75,14 @@ class CheckDialog(Adw.Dialog):
         self._run()
 
     def _stop(self):
+        self._unwatch()
         if self.check:
             self.check.stop()
+
+    def _unwatch(self):
+        for handler in self._watch:
+            self.pipeline.disconnect(handler)
+        self._watch = []
 
     def _button(self, label, callback, suggested=False):
         button = Gtk.Button(label=label, css_classes=["suggested-action"] if suggested else [])
@@ -89,6 +98,10 @@ class CheckDialog(Adw.Dialog):
     def _run(self):
         self._stop()
         self.check = monitor.Check(self.pipeline)
+        self.cuts = []
+        self._relabelled = 0.0
+        if self.pipeline.preset:
+            self.heading.set_subtitle(self.pipeline.preset.name)
         self.check.connect("updated", self._on_updated)
         self.check.connect("aborted", self._on_aborted)
         self.rows = {}
@@ -105,14 +118,26 @@ class CheckDialog(Adw.Dialog):
         self.check.start()
 
     def _on_updated(self, check_):
+        if check_.elapsed - self._relabelled < LIVE_INTERVAL:
+            return
+        self._relabelled = check_.elapsed
         self.monitoring.set_title(f"Elapsed {elapsed_text(check_.elapsed)}")
         for key, row in self.rows.items():
             row.set_subtitle(overs_text(check_.readings[key]))
 
     def _on_aborted(self, _check, reason):
+        self._show_stopped(reason)
+
+    def _show_stopped(self, reason):
+        self._unwatch()
+        self.cuts = []
         self.body.set_child(Adw.StatusPage(icon_name="dialog-warning-symbolic", title="Check Stopped",
                                            description=reason))
         self._set_buttons(("Run Again", self._run, True), ("Close", self.close))
+
+    def _on_pipeline_changed(self, *_):
+        if self.pipeline.stages() != self.check.stages:
+            self._show_stopped("The effects changed during the check")
 
     def _summarise(self):
         check_ = self.check
@@ -153,6 +178,8 @@ class CheckDialog(Adw.Dialog):
         self.body.set_child(page)
         self.summary = group
         if self.cuts:
+            self._watch = [self.pipeline.connect(name, self._on_pipeline_changed)
+                           for name in ("state-changed", "preset-changed")]
             self._set_buttons(("Fix Settings", lambda: self._fix(False), True),
                               ("Fix and Save Preset", lambda: self._fix(True)), ("Cancel", self.close))
         else:

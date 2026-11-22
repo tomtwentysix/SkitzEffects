@@ -1,4 +1,5 @@
 from math import sqrt
+from types import SimpleNamespace
 
 import pytest
 from gi.repository import GObject
@@ -52,6 +53,8 @@ class FakePipeline(GObject.Object):
     def __init__(self):
         super().__init__()
         self.current = [check.Stage("surround", "Surround", "surround", "node")]
+        self.direction = "output"
+        self.device = SimpleNamespace(name="sink_a")
 
     def stages(self):
         return self.current
@@ -69,3 +72,24 @@ def test_check_aborts_when_the_stages_change():
     fake.emit("state-changed")
     assert reasons == ["The effects changed during the check"]
     run.stop()
+
+
+def test_check_aborts_when_the_device_changes():
+    fake = FakePipeline()
+    run = monitor.Check(fake)
+    reasons = []
+    run.connect("aborted", lambda _c, reason: reasons.append(reason))
+    assert not run._check_device(fake.device)
+    fake.device = SimpleNamespace(name="sink_b")
+    assert run._check_device(fake.device)
+    assert reasons == ["The output device changed during the check"]
+
+
+def test_check_aborts_when_the_device_goes_away():
+    fake = FakePipeline()
+    fake.direction = "input"
+    run = monitor.Check(fake)
+    reasons = []
+    run.connect("aborted", lambda _c, reason: reasons.append(reason))
+    assert run._check_device(None)
+    assert reasons == ["The input device changed during the check"]

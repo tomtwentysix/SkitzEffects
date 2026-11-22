@@ -27,11 +27,11 @@ def test_ordinary_changes_and_unmeasured_stages():
 
 
 def test_planned_cut_text_for_each_control():
-    assert ui.cut_text(check.Cut("a", "output-gain", -4.6)) == "Output gain -4.6 dB"
-    assert ui.cut_text(check.Cut("surround", "surround", -2.0)) == "Surround levels -2.0 dB"
-    assert ui.cut_text(check.Cut("a", "ceiling", -1.0)) == "Ceiling -1.0 dB"
-    assert ui.cut_text(check.Cut("a", "volume", -1.0)) == "Volume -1.0 dB"
-    assert ui.cut_text(check.Cut("a", "target", -1.0)) == "Target -1.0 LUFS, applied gradually"
+    assert ui.cut_text(check.Cut("a", "output-gain", -4.6)) == "Output gain lowered by 4.6 dB"
+    assert ui.cut_text(check.Cut("surround", "surround", -2.0)) == "Surround levels lowered by 2.0 dB"
+    assert ui.cut_text(check.Cut("a", "ceiling", -1.0)) == "Ceiling lowered by 1.0 dB"
+    assert ui.cut_text(check.Cut("a", "volume", -1.0)) == "Volume lowered by 1.0 dB"
+    assert ui.cut_text(check.Cut("a", "target", -1.0)) == "Target lowered by 1.0 LU, applied gradually"
 
 
 def test_input_and_leftover_lines():

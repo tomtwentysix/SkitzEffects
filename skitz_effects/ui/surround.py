@@ -60,6 +60,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._fill_levels()
 
         controller.output.connect("state-changed", lambda *_: self.refresh())
+        controller.output.connect("preset-changed", lambda *_: self._fill_levels())
         controller.connect("devices-changed", lambda *_: self.refresh())
         self.refresh()
 

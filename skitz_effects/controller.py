@@ -427,7 +427,8 @@ class Pipeline(GObject.Object):
                 # ALSA's left and right mono profiles keep the unused input as AUX1, which would
                 # otherwise reach the effects' right side.
                 channel = "MONO"
-            return "stereo", graph.build_input(self.preset, enabled, device.name, channel, device.positions)
+            return "stereo", graph.build_input(check.trimmed(self.preset, self.trims), enabled, device.name, channel,
+                                               device.positions)
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
         return route, graph.build(check.trimmed(self.preset, self.trims), enabled, route, s.layout, s.hrir,
@@ -507,6 +508,8 @@ class Pipeline(GObject.Object):
     def changed(self, effect_id, structural=False):
         """Called after the UI edits the preset; saves it and applies the change."""
         self._queue_save()
+        if structural and self.preset:
+            self.trims = [t for t in self.trims if t.key == "surround" or t.key in self.preset.order]
         if structural or not self.preset:
             self.queue_rebuild()
             return
@@ -533,6 +536,7 @@ class Pipeline(GObject.Object):
             self._conf = self._build(self.device)[1]
 
     def fix(self, cuts, save):
+        cuts = [c for c in cuts if c.key == "surround" or (self.preset and c.key in self.preset.order)]
         all_cuts = self.trims + cuts
         surround = any(c.control == "surround" for c in all_cuts)
         s = self.controller.settings
@@ -549,6 +553,7 @@ class Pipeline(GObject.Object):
                         s.surround_levels.pop(channel, None)
                 s.save()
             self.trims = []
+            self.emit("preset-changed")
         else:
             self.trims = all_cuts
         live = self.pw and self.chain_running

@@ -76,7 +76,7 @@ def level_change(before, after):
         return None
     if after.energy <= 0:
         return SILENCE_DB
-    return max(SILENCE_DB, 10 * log10(after.energy / before.energy))
+    return max(SILENCE_DB, 10 * log10((after.energy / after.frames) / (before.energy / before.frames)))
 
 
 def drop_flagged(stage, change, layout):
@@ -106,7 +106,8 @@ def trimmed_levels(layout, levels, cuts):
 def fold(preset, cuts):
     for cut in cuts:
         if cut.control != "surround":
-            preset.settings(cut.key)[cut.control] += cut.db
+            settings = preset.settings(cut.key)
+            settings[cut.control] = round(settings[cut.control] + cut.db, 6)
 
 
 def room(preset, stages, layout, levels):

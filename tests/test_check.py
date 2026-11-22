@@ -80,6 +80,11 @@ def test_drops():
     assert check.drop_flagged(surround, -17.0, "7.1")
 
 
+def test_level_change_compares_mean_power():
+    change = check.level_change(check.Reading(energy=1.0, frames=10), check.Reading(energy=0.2, frames=20))
+    assert change == pytest.approx(-10.0)
+
+
 def test_a_silent_output_is_a_drop():
     change = check.level_change(check.Reading(energy=1.0, frames=10), check.Reading(frames=10))
     assert change == -120.0
@@ -115,6 +120,13 @@ def test_fold_writes_into_the_preset(ee_root):
     p = presets.load("Dali iO6")
     check.fold(p, [check.Cut("bass_loudness#0", "output-gain", -2.0)])
     assert p.settings("bass_loudness#0")["output-gain"] == pytest.approx(-5.0)
+
+
+def test_fold_rounds_the_written_value(ee_root):
+    p = presets.load("Dali iO6")
+    p.settings("bass_loudness#0")["output-gain"] = -0.2
+    check.fold(p, [check.Cut("bass_loudness#0", "output-gain", -0.1)])
+    assert p.settings("bass_loudness#0")["output-gain"] == -0.3
 
 
 def test_trimmed_levels():
