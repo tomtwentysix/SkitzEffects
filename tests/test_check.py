@@ -1,6 +1,6 @@
 import pytest
 
-from skitz_effects import check
+from skitz_effects import check, presets
 
 S = lambda key, kind: check.Stage(key, key, kind, key)
 peak_db = lambda db: check.Reading(peak=10 ** (db / 20), overs=1)
@@ -101,3 +101,33 @@ def test_a_carry_passes_through_a_stage_with_no_cut_target():
     cuts, left = check.plan_cuts(stages, readings, room)
     assert [(c.key, c.db) for c in cuts] == [("equalizer#0", pytest.approx(-4.0)), ("bass_loudness#0", pytest.approx(-6.5))]
     assert left == 0
+
+
+def test_trimmed_leaves_the_preset_alone(ee_root):
+    p = presets.load("Dali iO6")
+    t = check.trimmed(p, [check.Cut("bass_loudness#0", "output-gain", -2.0)])
+    assert t.settings("bass_loudness#0")["output-gain"] == pytest.approx(-5.0)
+    assert p.settings("bass_loudness#0")["output-gain"] == -3.0
+    assert check.trimmed(None, [check.Cut("bass_loudness#0", "output-gain", -2.0)]) is None
+
+
+def test_fold_writes_into_the_preset(ee_root):
+    p = presets.load("Dali iO6")
+    check.fold(p, [check.Cut("bass_loudness#0", "output-gain", -2.0)])
+    assert p.settings("bass_loudness#0")["output-gain"] == pytest.approx(-5.0)
+
+
+def test_trimmed_levels():
+    cut = [check.Cut("surround", "surround", -2.0)]
+    assert check.trimmed_levels("5.1", {"FC": 3.0}, cut) == {"FL": -2.0, "FR": -2.0, "FC": 1.0, "LFE": -2.0, "RL": -2.0, "RR": -2.0}
+    assert check.trimmed_levels("5.1", {"FC": 3.0}, []) == {"FC": 3.0}
+
+
+def test_room(ee_root):
+    p = presets.load("Dali iO6")
+    stages = [S("bass_loudness#0", "bass_loudness"), S("surround", "surround"), S("mystery#0", "unknown")]
+    room = check.room(p, stages, "7.1", {"FC": -10.0})
+    assert room["bass_loudness#0"] == pytest.approx(33.0)
+    assert room["surround"] == pytest.approx(2.0)
+    assert room["mystery#0"] == 0.0
+    assert check.room(None, stages, "7.1", {})["bass_loudness#0"] == 0.0

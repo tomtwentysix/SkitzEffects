@@ -1,7 +1,9 @@
+import copy
 from dataclasses import dataclass
 from math import ceil, log10
 
 from . import plugins
+from .config import LAYOUTS
 from .graph import HRIR_HEADROOM
 
 CUT_MARGIN_DB = 0.5
@@ -84,3 +86,39 @@ def drop_flagged(stage, change, layout):
     if stage.kind == "surround":
         limit += 20 * log10(HRIR_HEADROOM.get(layout, 1.0))
     return change < limit
+
+
+def trimmed(preset, cuts):
+    if preset is None:
+        return None
+    result = copy.deepcopy(preset)
+    fold(result, cuts)
+    return result
+
+
+def trimmed_levels(layout, levels, cuts):
+    cut = sum(c.db for c in cuts if c.control == "surround")
+    if not cut:
+        return levels
+    return {ch: levels.get(ch, 0.0) + cut for ch in LAYOUTS[layout]}
+
+
+def fold(preset, cuts):
+    for cut in cuts:
+        if cut.control != "surround":
+            preset.settings(cut.key)[cut.control] += cut.db
+
+
+def room(preset, stages, layout, levels):
+    result = {}
+    for stage in stages:
+        target = cut_target(stage.kind)
+        if target is None:
+            result[stage.key] = 0.0
+        elif stage.kind == "surround":
+            result[stage.key] = min(levels.get(ch, 0.0) for ch in LAYOUTS[layout]) - target[1]
+        elif preset is None:
+            result[stage.key] = 0.0
+        else:
+            result[stage.key] = preset.settings(stage.key)[target[0]] - target[1]
+    return result
