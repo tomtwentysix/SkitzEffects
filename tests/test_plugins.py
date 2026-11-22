@@ -46,8 +46,14 @@ def test_bass_loudness_takes_linear_values(ee_root):
     settings = presets.load("Dali iO6").settings("bass_loudness#0")
     controls = plugins.effect("bass_loudness").controls(settings)
     assert set(controls) == {"loudness", "output", "link"}
-    assert controls["link"] == pytest.approx(0.3508, abs=1e-4)
     assert all(0 <= v <= 1 for v in controls.values())
+
+
+def test_bass_loudness_link_is_hidden_and_always_off():
+    effect = plugins.effect("bass_loudness")
+    assert "link" not in {p.key for p in effect.shown()}
+    # -3.3 dB is above the plugin's 0.5 switch point, which would turn Loudness into a fader.
+    assert effect.controls({"loudness": -1.8, "output": -6.5, "link": -3.3})["link"] == 0.0
 
 
 def test_laptop_preset_maps_completely(ee_root):

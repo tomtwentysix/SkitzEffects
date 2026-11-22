@@ -140,7 +140,7 @@ def test_bass_loudness_gains_are_live_controls(ee_root, lv2):
     live = graph.live_controls("bass_loudness#0", effect, settings)
     assert live["bass_loudness_0_out_r:Mult"] == pytest.approx(graph.db(-3.0))
     assert live["bass_loudness_0_in_l:Mult"] == pytest.approx(1.0)
-    assert live["bass_loudness_0:link"] == pytest.approx(graph.db(-9.1))
+    assert live["bass_loudness_0:link"] == 0.0
     assert all(key.split(":")[1] for key in live)
 
 

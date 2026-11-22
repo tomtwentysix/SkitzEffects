@@ -198,6 +198,12 @@ def equalizer_controls(effect, data):
     return out
 
 
+def bass_loudness_controls(effect, data):
+    # Link above 0.5 turns Loudness into a fader for fading out, which costs over 20 dB at a typical
+    # setting and has no use here, so it is always off whatever the preset holds.
+    return {**mapped_controls(effect.params, data), "link": 0.0}
+
+
 def equalizer_params():
     params = list(gains()) + [
         Param("mode", "mode", "enum", ("IIR", "FIR", "FFT", "SPM"), "Mode"),
@@ -391,8 +397,8 @@ EFFECTS = {
                 Param("output-gain", "", label="Output gain", lo=-36, hi=36, step=0.1, unit="dB"),
                 Param("loudness", "loudness", "db", label="Loudness", lo=-60, hi=0, step=0.1, unit="dB"),
                 Param("output", "output", "db", label="Output", lo=-60, hi=0, step=0.1, unit="dB"),
-                Param("link", "link", "db", label="Link", lo=-60, hi=0, step=0.1, unit="dB"),
             ),
+            custom=bass_loudness_controls,
         ),
         Effect(
             "deepfilternet", "Deep Noise Remover", "deep_filter_stereo", package="ladspa-deepfilternet",
