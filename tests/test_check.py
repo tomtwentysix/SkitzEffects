@@ -78,3 +78,26 @@ def test_drops():
     assert not check.drop_flagged(eq, -5.0, "7.1")
     assert not check.drop_flagged(surround, -15.0, "7.1")
     assert check.drop_flagged(surround, -17.0, "7.1")
+
+
+def test_a_silent_output_is_a_drop():
+    change = check.level_change(check.Reading(energy=1.0, frames=10), check.Reading(frames=10))
+    assert change == -120.0
+    assert check.drop_flagged(S("equalizer#0", "equalizer"), change, "7.1")
+    assert check.level_change(check.Reading(frames=10), check.Reading(frames=10)) is None
+
+
+def test_negative_room_applies_nothing():
+    stages = [S("equalizer#0", "equalizer")]
+    cuts, left = check.plan_cuts(stages, {"equalizer#0": peak_db(2)}, {"equalizer#0": -1.0})
+    assert cuts == []
+    assert left == pytest.approx(2.5)
+
+
+def test_a_carry_passes_through_a_stage_with_no_cut_target():
+    stages = [S("equalizer#0", "equalizer"), S("mystery#0", "unknown"), S("bass_loudness#0", "bass_loudness")]
+    readings = {"equalizer#0": peak_db(10), "mystery#0": check.Reading(), "bass_loudness#0": check.Reading()}
+    room = {"equalizer#0": 4.0, "mystery#0": 0.0, "bass_loudness#0": 36.0}
+    cuts, left = check.plan_cuts(stages, readings, room)
+    assert [(c.key, c.db) for c in cuts] == [("equalizer#0", pytest.approx(-4.0)), ("bass_loudness#0", pytest.approx(-6.5))]
+    assert left == 0

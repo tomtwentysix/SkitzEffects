@@ -6,6 +6,7 @@ from .graph import HRIR_HEADROOM
 
 CUT_MARGIN_DB = 0.5
 DROP_DB = -6.0
+SILENCE_DB = -120.0
 SURROUND_CUT = ("surround", -12.0, 0.5)
 CUT_CONTROLS = {"output-gain", "volume", "ceiling", "target"}
 
@@ -60,7 +61,7 @@ def plan_cuts(stages, readings, room):
         if needed <= 0:
             continue
         needed = round(ceil(needed / step - 1e-6) * step, 6)
-        applied = min(needed, room[stage.key])
+        applied = min(needed, max(room[stage.key], 0.0))
         if applied > 0:
             cuts.append(Cut(stage.key, control, -applied))
             cut_so_far += applied
@@ -69,9 +70,11 @@ def plan_cuts(stages, readings, room):
 
 
 def level_change(before, after):
-    if not before.frames or not after.frames or before.energy <= 0 or after.energy <= 0:
+    if not before.frames or not after.frames or before.energy <= 0:
         return None
-    return 10 * log10(after.energy / before.energy)
+    if after.energy <= 0:
+        return SILENCE_DB
+    return max(SILENCE_DB, 10 * log10(after.energy / before.energy))
 
 
 def drop_flagged(stage, change, layout):
