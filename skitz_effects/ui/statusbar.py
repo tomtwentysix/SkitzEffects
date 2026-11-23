@@ -196,8 +196,8 @@ class StatusBar(Gtk.ActionBar):
             VolumeControl(controller, lambda: graph.SINK, "Output Volume",
                           "The system output volume, applied to everything apps play before the output effects",
                           ("audio-volume-high-symbolic", "audio-volume-muted-symbolic")),
-            VolumeControl(controller, lambda: inputs.device and inputs.device.name, "Mic Pre-Gain",
-                          "Microphone volume, before the input effects",
+            VolumeControl(controller, lambda: inputs.device and inputs.device.name, "Input Volume",
+                          "The system input volume, applied to the microphone before the input effects",
                           ("microphone-sensitivity-high-symbolic", "microphone-sensitivity-muted-symbolic")),
         )
         for control in reversed(self.volumes):
