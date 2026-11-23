@@ -10,6 +10,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import config, deps, migrate  # noqa: E402
 from .controller import Controller  # noqa: E402
+from .ui.unsaved import ask, unsaved_pipelines  # noqa: E402
 
 VERSION = "1.0.18"
 ICONS = Path(__file__).parent.parent / "data" / "icons"
@@ -26,6 +27,9 @@ class SkitzEffectsApplication(Adw.Application):
         self.controller = Controller(self.settings)
         self._held = False
         self._tray = None
+        self._prompt = None
+        self._answering = False
+        self.quitting = False
         self.add_main_option("background", 0, 0, 0, "Start without opening a window", None)
         self._add_action("quit", self._on_quit, ["<primary>q"])
         self._add_action("about", self._on_about)
@@ -38,6 +42,8 @@ class SkitzEffectsApplication(Adw.Application):
         self.effects.connect("change-state", lambda _a, value: output.set_enabled(value.get_boolean()))
         self.add_action(self.effects)
         output.connect("state-changed", self._on_output_changed)
+        for pipeline in self.controller.pipelines:
+            pipeline.connect("switch-pending", self._on_switch_pending)
 
     def _add_action(self, name, callback, accels=None):
         action = Gio.SimpleAction.new(name, None)
@@ -102,9 +108,58 @@ class SkitzEffectsApplication(Adw.Application):
 
         deps.set_autostart(on, autostart_command(), self.settings.start_minimised)
 
-    def _on_quit(self, *_):
+    def _close_prompt(self):
+        prompt, self._prompt = self._prompt, None
+        if prompt:
+            prompt.force_close()
+
+    def _on_switch_pending(self, _pipeline):
+        if self._answering:
+            return
+        self._close_prompt()
+        waiting = [p for p in self.controller.pipelines if p.pending]
+        if waiting:
+            self.activate()
+            self._prompt = ask(self.window(), waiting, False, lambda choice: self._on_switch_answer(waiting, choice))
+
+    def _on_switch_answer(self, waiting, choice):
+        if self._prompt is None:
+            return
+        self._prompt = None
+        self._answering = True
+        for pipeline in waiting:
+            pipeline.resolve(choice)
+        self._answering = False
+
+    def request_quit(self):
+        edited = unsaved_pipelines(self.controller.pipelines)
+        if not edited:
+            self._quit()
+        elif self._prompt is None:
+            self.activate()
+            self._prompt = ask(self.window(), edited, True, lambda choice: self._on_quit_answer(edited, choice))
+
+    def _on_quit_answer(self, edited, choice):
+        if self._prompt is None:
+            return
+        self._prompt = None
+        if choice == "cancel":
+            return
+        if choice == "save":
+            for pipeline in edited:
+                if pipeline.unsaved:
+                    pipeline.save_preset()
+                if pipeline.levels_unsaved:
+                    pipeline.save_levels()
+        self._quit()
+
+    def _quit(self):
+        self.quitting = True
         self.controller.shutdown()
         self.quit()
+
+    def _on_quit(self, *_):
+        self.request_quit()
 
     def do_shutdown(self):
         self.set_tray(False)
