@@ -1,6 +1,6 @@
 from gi.repository import Adw, Gio, GLib, Gtk
 
-from .. import plugins, presets
+from .. import plugins, presets, tooltips
 from .check import CheckDialog
 from .eq import EqualizerEditor
 from .irs import import_ir
@@ -223,20 +223,21 @@ class EffectsView(Adw.Bin):
         group = Adw.PreferencesGroup()
         for param in shown:
             if param.key != "output-gain":
-                group.add(param_row(param, settings, changed))
+                group.add(param_row(param, settings, changed, tooltip=tooltips.text(effect.kind, param.key)))
         page.add(group)
         if effect.kind == "equalizer":
             self._equalizer_groups(page, settings, on_change)
         for param in shown:
             if param.key == "output-gain":
                 output = Adw.PreferencesGroup()
-                output.add(param_row(param, settings, changed))
+                output.add(param_row(param, settings, changed, tooltip=tooltips.text(effect.kind, param.key)))
                 page.add(output)
         return page
 
     def _convolver_group(self, settings, on_change):
         group = Adw.PreferencesGroup(title="Impulse Response")
-        row = full_names(Adw.ComboRow(title="Impulse response", enable_search=True))
+        row = full_names(Adw.ComboRow(title="Impulse response", enable_search=True,
+                                     tooltip_text=tooltips.text("convolver", "kernel-name")))
         names = []
         filling = False
 
@@ -280,7 +281,9 @@ class EffectsView(Adw.Bin):
         bands = Adw.PreferencesGroup(title="Bands")
         count = plugins.Param("num-bands", "", label="Number of bands", lo=1, hi=plugins.EQ_BANDS, step=1,
                               digits=0)
-        bands.add(param_row(count, settings, lambda: (on_change(), self._show(self.selected))))
+        bands.add(param_row(count, settings, lambda: (on_change(), self._show(self.selected)),
+                            tooltip=tooltips.text("equalizer", "num-bands")))
         split = plugins.Param("split-channels", "", "bool", label="Separate left and right")
-        bands.add(param_row(split, settings, lambda: (on_change(), self._show(self.selected))))
+        bands.add(param_row(split, settings, lambda: (on_change(), self._show(self.selected)),
+                            tooltip=tooltips.text("equalizer", "split-channels")))
         page.add(bands)

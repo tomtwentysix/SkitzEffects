@@ -5,7 +5,7 @@ import math
 import numpy as np
 from gi.repository import Adw, Gtk
 
-from .. import levels, plugins, presets
+from .. import levels, plugins, presets, tooltips
 from .analyser import accent, draw_grid, x_of
 from .rows import param_row, set_path
 
@@ -145,7 +145,7 @@ class EqualizerEditor(Gtk.Box):
             nav.append(button)
         self.band_group.set_header_suffix(nav)
         for param in BAND_PARAMS:
-            row = param_row(param, band, self.changed)
+            row = param_row(param, band, self.changed, tooltip=tooltips.text("equalizer_band", param.key))
             self._band_rows.append(row)
             self.band_group.add(row)
 

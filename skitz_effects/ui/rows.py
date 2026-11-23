@@ -54,7 +54,14 @@ def set_path(settings, key, value):
     settings[last] = value
 
 
-def param_row(param, settings, on_change, title=None):
+def param_row(param, settings, on_change, title=None, tooltip=""):
+    row = _param_row(param, settings, on_change, title)
+    if tooltip:
+        row.set_tooltip_text(tooltip)
+    return row
+
+
+def _param_row(param, settings, on_change, title=None):
     value = plugins.lookup(settings, param.key)
     title = title or param.label
 
