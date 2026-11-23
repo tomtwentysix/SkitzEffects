@@ -68,7 +68,8 @@ class Check(GObject.Object):
         self._sync()
 
     def _check_device(self, device):
-        if self._device_name(device) == self._device:
+        # None is a device briefly gone, as during a WirePlumber restart; dead taps are replaced once it is back.
+        if device is None or self._device_name(device) == self._device:
             return False
         self.stop()
         self.emit("aborted", f"The {self.pipeline.direction} device changed during the check")

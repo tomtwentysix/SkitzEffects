@@ -85,11 +85,15 @@ def test_check_aborts_when_the_device_changes():
     assert reasons == ["The output device changed during the check"]
 
 
-def test_check_aborts_when_the_device_goes_away():
+def test_a_brief_device_dropout_does_not_abort():
+    # Pipeline.device is None only while the device is briefly gone, as during a WirePlumber restart;
+    # once that grace runs out it names a stand-in, which does abort.
     fake = FakePipeline()
     fake.direction = "input"
     run = monitor.Check(fake)
     reasons = []
     run.connect("aborted", lambda _c, reason: reasons.append(reason))
-    assert run._check_device(None)
+    assert not run._check_device(None)
+    assert not run._check_device(fake.device)
+    assert run._check_device(SimpleNamespace(name="stand_in"))
     assert reasons == ["The input device changed during the check"]

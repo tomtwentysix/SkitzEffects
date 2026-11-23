@@ -547,6 +547,7 @@ class Pipeline(GObject.Object):
                 self._queue_save()
             if surround:
                 for channel, gain in levels.items():
+                    gain = round(gain, 6)
                     if gain:
                         s.surround_levels[channel] = gain
                     else:

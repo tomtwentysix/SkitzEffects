@@ -147,9 +147,11 @@ def test_fix_saves_surround_cuts_into_the_levels(ee_root, monkeypatch):
     pipeline = make_pipeline(monkeypatch, layout="5.1")
     levels = pipeline.controller.settings.surround_levels
     levels["FC"] = 3.0
+    levels["RL"] = 2.1
     pipeline.fix([Cut("surround", "surround", -3.0)], True)
     assert "FC" not in levels
     assert levels["FL"] == -3.0
+    assert levels["RL"] == -0.9
     assert pipeline.trims == []
     assert pipeline.saves.count(1) == 1
 

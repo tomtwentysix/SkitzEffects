@@ -186,6 +186,7 @@ class CheckDialog(Adw.Dialog):
             self._set_buttons(("Run Again", self._run, True), ("Close", self.close))
 
     def _fix(self, save):
+        self._unwatch()
         self.pipeline.fix(self.cuts, save)
         self.summary.set_description("The settings have been lowered. Run the check again to confirm.")
         self._set_buttons(("Run Again", self._run, True), ("Close", self.close))
