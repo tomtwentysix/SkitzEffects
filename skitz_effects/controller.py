@@ -7,6 +7,7 @@ import resource
 import signal
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from gi.repository import Gio, GLib, GObject
@@ -134,6 +135,13 @@ def _start_chain():
     resource.setrlimit(resource.RLIMIT_RTTIME, (RT_TIME_LIMIT, RT_TIME_LIMIT))
 
 
+@dataclass
+class Pending:
+    preset: str | None
+    new: bool
+    device: str | None
+
+
 class Pipeline(GObject.Object):
     """One direction: output (apps -> sink -> effects -> speakers) or input (mic -> effects -> source -> apps)."""
 
@@ -141,6 +149,7 @@ class Pipeline(GObject.Object):
         "preset-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "state-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "unsaved-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "switch-pending": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self, controller, direction):
@@ -161,6 +170,7 @@ class Pipeline(GObject.Object):
         self.saved = self._snapshot()
         self.levels_owner = self.state["device"] if output else ""
         self.levels = self._saved_levels()
+        self.pending = None
         self.route = ""
         self._proc = None
         self._started = 0.0
@@ -354,16 +364,29 @@ class Pipeline(GObject.Object):
         if device:
             self.state["device_names"][name] = self.display_name(device)
         rule = self.state["device_presets"].get(name)
-        if rule and rule in presets.list_presets(self.direction):
-            self.load_preset(rule)
+        if rule not in presets.list_presets(self.direction):
+            rule = None
+        edited_preset = self.unsaved and rule != self.state["preset"]
+        edited_levels = self.levels_unsaved and bool(self.levels_owner) and name != self.levels_owner
+        if (rule and edited_preset) or edited_levels:
+            self.pending = Pending(rule, False, name)
+            self.emit("switch-pending")
+        else:
+            if self.pending and self.pending.device is not None:
+                self.pending = None
+            if rule and not self.unsaved:
+                self._switch_preset(rule, False)
+            self._take_levels(name)
+        self.controller.settings.save()
+        self.emit("state-changed")
+        self.queue_rebuild()
+
+    def _take_levels(self, name):
         if not self.levels_unsaved:
             self.levels_owner = name
             self.levels = self._saved_levels()
         elif not self.levels_owner:
             self.levels_owner = name
-        self.controller.settings.save()
-        self.emit("state-changed")
-        self.queue_rebuild()
 
     def _snapshot(self):
         if not self.preset:
@@ -419,20 +442,49 @@ class Pipeline(GObject.Object):
         self.emit("unsaved-changed")
 
     def load_preset(self, name):
-        self.preset = presets.load(name, self.direction)
+        self._ask_or_switch(name, False)
+
+    def new_preset(self, name):
+        self._ask_or_switch(name, True)
+
+    def _ask_or_switch(self, name, new):
+        if self.unsaved:
+            self.pending = Pending(name, new, None)
+            self.emit("switch-pending")
+        else:
+            self._switch_preset(name, new)
+
+    def _switch_preset(self, name, new):
+        self.preset = presets.create(name, self.direction) if new else presets.load(name, self.direction)
         self.saved = self._snapshot()
         self.state["preset"] = name if self.preset else ""
         self.controller.settings.save()
         self.emit("preset-changed")
         self.queue_rebuild()
 
-    def new_preset(self, name):
-        self.preset = presets.create(name, self.direction)
-        self.saved = self._snapshot()
-        self.state["preset"] = name
-        self.controller.settings.save()
-        self.emit("preset-changed")
-        self.queue_rebuild()
+    def resolve(self, choice):
+        pending, self.pending = self.pending, None
+        if not pending or choice == "cancel":
+            return
+        if choice == "save":
+            if self.unsaved:
+                self.save_preset()
+            if self.levels_unsaved:
+                self.save_levels()
+        elif choice == "discard":
+            if self.unsaved:
+                self.discard_preset()
+            if self.levels_unsaved:
+                self.discard_levels()
+        if pending.preset:
+            self._switch_preset(pending.preset, pending.new)
+        if pending.device is not None:
+            self.levels_owner = pending.device
+            self.levels = self._saved_levels()
+            self.controller.settings.save()
+            self.emit("state-changed")
+            self.queue_rebuild()
+        self.emit("unsaved-changed")
 
     def set_enabled(self, on):
         self.state["enabled"] = on

@@ -85,6 +85,7 @@ def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
     pipeline.emitted = []
     pipeline.levels = {}
     pipeline.levels_owner = ""
+    pipeline.pending = None
     pipeline.rebuilds = []
     pipeline._taps = []
     pipeline._proc = None
@@ -214,6 +215,7 @@ def test_loading_and_quitting_write_nothing(ee_root, lv2, monkeypatch):
     pipeline.shutdown()
     assert path.read_bytes() == before
     pipeline.load_preset("Laptop")
+    pipeline.resolve("discard")
     assert path.read_bytes() == before
     assert not pipeline.unsaved
 
@@ -378,3 +380,185 @@ def test_levels_of_another_layout_are_not_an_edit(monkeypatch):
     assert not pipeline.levels_unsaved
     pipeline.controller.settings.layout = "7.1"
     assert pipeline.levels_unsaved
+
+
+def test_switching_from_unsaved_waits(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.emitted.clear()
+    pipeline.load_preset("Laptop")
+    assert pipeline.pending.preset == "Laptop"
+    assert not pipeline.pending.new
+    assert pipeline.pending.device is None
+    assert pipeline.state["preset"] == "Dali iO6"
+    assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -7.0
+    assert pipeline.emitted == ["switch-pending"]
+
+
+def test_a_new_preset_from_unsaved_waits(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.new_preset("Fresh")
+    assert pipeline.pending.preset == "Fresh"
+    assert pipeline.pending.new
+    assert "Fresh" not in presets_listed()
+
+
+def presets_listed():
+    from skitz_effects import presets
+    return presets.list_presets()
+
+
+def test_switching_when_saved_is_immediate(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    pipeline.load_preset("Laptop")
+    assert pipeline.pending is None
+    assert pipeline.state["preset"] == "Laptop"
+
+
+def test_resolve_save_discard_cancel(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    path = pipeline.preset.path
+    before = path.read_bytes()
+
+    edit_gain(pipeline, -7.0)
+    pipeline.load_preset("Laptop")
+    pipeline.resolve("cancel")
+    assert pipeline.pending is None
+    assert pipeline.state["preset"] == "Dali iO6"
+    assert pipeline.unsaved
+
+    pipeline.load_preset("Laptop")
+    pipeline.emitted.clear()
+    pipeline.resolve("discard")
+    assert pipeline.pending is None
+    assert pipeline.state["preset"] == "Laptop"
+    assert path.read_bytes() == before
+    assert not pipeline.unsaved
+    assert "preset-changed" in pipeline.emitted
+    assert "unsaved-changed" in pipeline.emitted
+
+    pipeline.load_preset("Dali iO6")
+    edit_gain(pipeline, -7.0)
+    pipeline.load_preset("Laptop")
+    pipeline.resolve("save")
+    assert json.loads(path.read_text())["output"]["bass_loudness#0"]["output-gain"] == -7.0
+    assert pipeline.state["preset"] == "Laptop"
+    assert pipeline.pending is None
+
+
+def test_resolve_creates_a_new_preset(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.new_preset("Fresh")
+    pipeline.resolve("discard")
+    assert pipeline.state["preset"] == "Fresh"
+    assert "Fresh" in presets_listed()
+
+
+def device_pipeline(monkeypatch, rules=None, layout="5.1"):
+    pipeline = make_pipeline(monkeypatch, layout=layout)
+    state = pipeline.controller.settings.output
+    state["device"] = "a"
+    state["device_presets"].update(rules or {})
+    state["device_surround_levels"].update({"a": {"FC": 1.0}, "b": {"FC": -2.0}})
+    pipeline.levels_owner = "a"
+    pipeline.levels = {"FC": 1.0}
+    return pipeline
+
+
+def test_a_device_with_no_rule_does_not_ask(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.select_device("b")
+    assert pipeline.pending is None
+    assert pipeline.unsaved
+    assert pipeline.state["device"] == "b"
+    assert pipeline.levels == {"FC": -2.0}
+
+
+def test_a_device_rule_asks_over_an_unsaved_preset(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop"})
+    edit_gain(pipeline, -7.0)
+    pipeline.emitted.clear()
+    pipeline.select_device("b")
+    assert pipeline.state["device"] == "b"
+    assert pipeline.pending.device == "b"
+    assert pipeline.pending.preset == "Laptop"
+    assert pipeline.state["preset"] == "Dali iO6"
+    assert pipeline.unsaved
+    assert pipeline.levels_owner == "a"
+    assert "switch-pending" in pipeline.emitted
+    pipeline.resolve("discard")
+    assert pipeline.state["preset"] == "Laptop"
+    assert pipeline.levels_owner == "b"
+    assert pipeline.levels == {"FC": -2.0}
+    assert pipeline.pending is None
+
+
+def test_a_device_rule_loads_when_saved(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop"})
+    pipeline.select_device("b")
+    assert pipeline.pending is None
+    assert pipeline.state["preset"] == "Laptop"
+
+
+def test_edited_levels_ask_before_the_new_device_levels(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    assert pipeline.pending.device == "b"
+    assert pipeline.pending.preset is None
+    assert pipeline.levels == {"FC": 4.0}
+    pipeline.resolve("save")
+    saved = pipeline.controller.settings.output["device_surround_levels"]
+    assert saved["a"] == {"FC": 4.0}
+    assert pipeline.levels_owner == "b"
+    assert pipeline.levels == {"FC": -2.0}
+
+
+def test_discarding_on_a_device_change_restores_the_old_levels(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    pipeline.resolve("discard")
+    saved = pipeline.controller.settings.output["device_surround_levels"]
+    assert saved["a"] == {"FC": 1.0}
+    assert pipeline.levels_owner == "b"
+    assert pipeline.levels == {"FC": -2.0}
+
+
+def test_cancel_on_a_device_change_keeps_the_edits(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop"})
+    edit_gain(pipeline, -7.0)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    pipeline.resolve("cancel")
+    assert pipeline.pending is None
+    assert pipeline.state["device"] == "b"
+    assert pipeline.state["preset"] == "Dali iO6"
+    assert pipeline.unsaved
+    assert pipeline.levels == {"FC": 4.0}
+    assert pipeline.levels_owner == "a"
+
+
+def test_the_owner_coming_back_asks_nothing(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    pipeline.resolve("cancel")
+    pipeline.select_device("a")
+    assert pipeline.pending is None
+    assert pipeline.levels == {"FC": 4.0}
+    assert pipeline.levels_owner == "a"
+    assert pipeline.levels_unsaved
+
+
+def test_a_second_device_change_replaces_the_pending_one(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop", "c": "Bass Boosted"})
+    edit_gain(pipeline, -7.0)
+    pipeline.select_device("b")
+    pipeline.select_device("c")
+    assert pipeline.pending.device == "c"
+    assert pipeline.pending.preset == "Bass Boosted"
+    assert pipeline.state["device"] == "c"
