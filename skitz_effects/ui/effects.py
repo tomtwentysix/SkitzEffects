@@ -25,7 +25,7 @@ class EffectsView(Adw.Bin):
                                             popover=self._presets_popover())
         top = Gtk.Box(margin_start=6, margin_end=6, margin_top=6, margin_bottom=6)
         top.append(self.preset_button)
-        self.save_button = Gtk.Button(icon_name="media-floppy-symbolic", css_classes=["flat"], tooltip_text="Save Preset")
+        self.save_button = Gtk.Button(icon_name="skitz-save-symbolic", css_classes=["flat"], tooltip_text="Save Preset")
         self.save_button.connect("clicked", lambda _b: self.pipeline.save_preset())
         top.append(self.save_button)
         self.check_button = Gtk.Button(icon_name="audio-volume-high-symbolic", css_classes=["flat"],
