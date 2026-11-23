@@ -3,8 +3,10 @@ from types import SimpleNamespace
 from skitz_effects.ui import unsaved as ui
 
 
-def pipeline(direction="output", preset=None, levels=None, owner="alsa.dali"):
+def pipeline(direction="output", preset=None, levels=None, owner="alsa.dali", replaces=(True, True)):
     return SimpleNamespace(
+        preset_replaced=bool(preset) and replaces[0],
+        levels_replaced=bool(levels) and replaces[1],
         direction=direction,
         preset=SimpleNamespace(name=preset) if preset else None,
         unsaved=bool(preset),
@@ -58,3 +60,11 @@ def test_quitting_wording():
 def test_unsaved_ones_are_picked_out():
     saved, edited = pipeline(), pipeline("input", preset="Podcast")
     assert ui.unsaved_pipelines([saved, edited]) == [edited]
+
+
+def test_a_switch_lists_only_what_it_replaces():
+    edited = pipeline(preset="Dali iO6", levels=True, replaces=(True, False))
+    _heading, body = ui.prompt_text([edited], False)
+    assert body == 'The output preset "Dali iO6" has unsaved changes.'
+    _heading, body = ui.prompt_text([edited], True)
+    assert "surround levels" in body

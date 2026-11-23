@@ -28,6 +28,7 @@ class SkitzEffectsApplication(Adw.Application):
         self._held = False
         self._tray = None
         self._prompt = None
+        self._prompt_is_quit = False
         self._answering = False
         self.quitting = False
         self.add_main_option("background", 0, 0, 0, "Start without opening a window", None)
@@ -113,23 +114,33 @@ class SkitzEffectsApplication(Adw.Application):
         if prompt:
             prompt.force_close()
 
+    def _on_prompt_closed(self, dialog):
+        if self._prompt is dialog:
+            self._prompt = None
+
     def _on_switch_pending(self, _pipeline):
         if self._answering:
             return
-        self._close_prompt()
         waiting = [p for p in self.controller.pipelines if p.pending]
+        if self._prompt is not None and not waiting and self._prompt_is_quit:
+            return
+        self._close_prompt()
         if waiting:
             self.activate()
-            self._prompt = ask(self.window(), waiting, False, lambda choice: self._on_switch_answer(waiting, choice))
+            self._prompt_is_quit = False
+            self._prompt = ask(self.window(), waiting, False,
+                               lambda d, choice: self._on_switch_answer(d, waiting, choice), self._on_prompt_closed)
 
-    def _on_switch_answer(self, waiting, choice):
-        if self._prompt is None:
+    def _on_switch_answer(self, dialog, waiting, choice):
+        if self._prompt is not dialog:
             return
         self._prompt = None
         self._answering = True
-        for pipeline in waiting:
-            pipeline.resolve(choice)
-        self._answering = False
+        try:
+            for pipeline in waiting:
+                pipeline.resolve(choice)
+        finally:
+            self._answering = False
 
     def request_quit(self):
         edited = unsaved_pipelines(self.controller.pipelines)
@@ -137,10 +148,12 @@ class SkitzEffectsApplication(Adw.Application):
             self._quit()
         elif self._prompt is None:
             self.activate()
-            self._prompt = ask(self.window(), edited, True, lambda choice: self._on_quit_answer(edited, choice))
+            self._prompt_is_quit = True
+            self._prompt = ask(self.window(), edited, True,
+                               lambda d, choice: self._on_quit_answer(d, edited, choice), self._on_prompt_closed)
 
-    def _on_quit_answer(self, edited, choice):
-        if self._prompt is None:
+    def _on_quit_answer(self, dialog, edited, choice):
+        if self._prompt is not dialog:
             return
         self._prompt = None
         if choice == "cancel":

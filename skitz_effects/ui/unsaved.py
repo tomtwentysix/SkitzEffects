@@ -7,10 +7,12 @@ def unsaved_pipelines(pipelines):
 
 def prompt_text(pipelines, quitting):
     lines = []
-    for pipeline in unsaved_pipelines(pipelines):
-        if pipeline.unsaved:
+    for pipeline in pipelines:
+        preset = pipeline.unsaved if quitting else pipeline.preset_replaced
+        levels = pipeline.levels_unsaved if quitting else pipeline.levels_replaced
+        if preset:
             lines.append(f'The {pipeline.direction} preset "{pipeline.preset.name}" has unsaved changes.')
-        if pipeline.levels_unsaved:
+        if levels:
             names = pipeline.state["device_names"]
             device = names.get(pipeline.levels_owner, pipeline.levels_owner)
             lines.append(f'The surround levels of "{device}" have unsaved changes.')
@@ -18,7 +20,7 @@ def prompt_text(pipelines, quitting):
     return f"Save Changes Before {action}?", "\n".join(lines)
 
 
-def ask(window, pipelines, quitting, done):
+def ask(window, pipelines, quitting, done, closed):
     heading, body = prompt_text(pipelines, quitting)
     verb = "Quit" if quitting else "Switch"
     dialog = Adw.AlertDialog(heading=heading, body=body, close_response="cancel", default_response="save")
@@ -27,6 +29,7 @@ def ask(window, pipelines, quitting, done):
     dialog.add_response("save", f"Save and {verb}")
     dialog.set_response_appearance("discard", Adw.ResponseAppearance.DESTRUCTIVE)
     dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
-    dialog.connect("response", lambda _d, response: done(response))
+    dialog.connect("response", lambda d, response: done(d, response))
+    dialog.connect("closed", lambda d: closed(d))
     dialog.present(window)
     return dialog

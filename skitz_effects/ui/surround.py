@@ -35,7 +35,7 @@ class SurroundGroup(Adw.PreferencesGroup):
                                                        "file.")
         self.controller = controller
         settings = controller.settings
-        self.save_button = Gtk.Button(label="Save", valign=Gtk.Align.CENTER, tooltip_text="Save the channel levels")
+        self.save_button = Gtk.Button(label="Save", valign=Gtk.Align.CENTER, tooltip_text="Save Channel Levels")
         self.save_button.connect("clicked", lambda _b: controller.output.save_levels())
         self.set_header_suffix(self.save_button)
         self.route_row = Adw.ActionRow(title="Route")
@@ -65,8 +65,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._sync_save()
 
         controller.output.connect("state-changed", lambda *_: self._show_levels())
-        controller.output.connect("unsaved-changed", lambda *_: self._show_levels())
-        controller.output.connect("unsaved-changed", lambda *_: self._sync_save())
+        controller.output.connect("unsaved-changed", lambda *_: (self._show_levels(), self._sync_save()))
         controller.output.connect("state-changed", lambda *_: self.refresh())
         controller.output.connect("preset-changed", lambda *_: self._fill_levels())
         controller.connect("devices-changed", lambda *_: self.refresh())
@@ -114,7 +113,6 @@ class SurroundGroup(Adw.PreferencesGroup):
         self.save_button.set_sensitive(self.controller.output.levels_unsaved)
 
     def refresh(self):
-        self._sync_save()
         sink = self.controller.output.device
         route = ROUTES.get(self.controller.output.route, "Not running")
         if sink:

@@ -620,3 +620,26 @@ def test_cancel_lets_unedited_levels_follow_the_device(ee_root, lv2, monkeypatch
     assert pipeline.levels == {"FC": -2.0}
     assert pipeline.state["preset"] == "Dali iO6"
     assert pipeline.unsaved
+
+
+def test_a_preset_switch_leaves_edited_levels_alone(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.load_preset("Laptop")
+    assert pipeline.preset_replaced
+    assert not pipeline.levels_replaced
+    pipeline.resolve("discard")
+    assert pipeline.state["preset"] == "Laptop"
+    assert pipeline.levels == {"FC": 4.0}
+    assert pipeline.levels_unsaved
+
+
+def test_a_preset_switch_saves_only_the_preset(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.load_preset("Laptop")
+    pipeline.resolve("save")
+    assert pipeline.controller.settings.output["device_surround_levels"]["a"] == {"FC": 1.0}
+    assert pipeline.levels_unsaved

@@ -465,8 +465,22 @@ class Pipeline(GObject.Object):
         self.emit("preset-changed")
         self.queue_rebuild()
 
+    def _replaced_by(self, pending):
+        preset = bool(pending.preset) and self.unsaved
+        levels = pending.device is not None and pending.device != self.levels_owner and self.levels_unsaved
+        return preset, levels
+
+    @property
+    def preset_replaced(self):
+        return bool(self.pending) and self._replaced_by(self.pending)[0]
+
+    @property
+    def levels_replaced(self):
+        return bool(self.pending) and self._replaced_by(self.pending)[1]
+
     def resolve(self, choice):
         pending, self.pending = self.pending, None
+        preset, levels = self._replaced_by(pending) if pending else (self.unsaved, self.levels_unsaved)
         if pending:
             self.emit("switch-pending")
         if choice == "cancel":
@@ -477,14 +491,14 @@ class Pipeline(GObject.Object):
                 self.queue_rebuild()
             return
         if choice == "save":
-            if self.unsaved:
+            if preset:
                 self.save_preset()
-            if self.levels_unsaved:
+            if levels:
                 self.save_levels()
         elif choice == "discard" and pending:
-            if self.unsaved:
+            if preset:
                 self.discard_preset()
-            if self.levels_unsaved:
+            if levels:
                 self.discard_levels()
         if not pending:
             return
