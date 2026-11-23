@@ -1,6 +1,7 @@
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from .. import plugins, presets
+from .check import CheckDialog
 from .eq import EqualizerEditor
 from .irs import import_ir
 from .rows import full_names, menu_row, param_row
@@ -24,6 +25,12 @@ class EffectsView(Adw.Bin):
                                             popover=self._presets_popover())
         top = Gtk.Box(margin_start=6, margin_end=6, margin_top=6, margin_bottom=6)
         top.append(self.preset_button)
+        self.check_button = Gtk.Button(icon_name="audio-volume-high-symbolic", css_classes=["flat"],
+                                       tooltip_text="Check for Distortion")
+        self.check_button.connect("clicked", lambda _b: CheckDialog(self.pipeline).present(self.get_root()))
+        top.append(self.check_button)
+        for name in ("state-changed", "preset-changed"):
+            pipeline.connect(name, lambda *_: self._sync_check())
         sidebar.add_top_bar(top)
         bottom = Gtk.ActionBar()
         bottom.set_center_widget(add)
@@ -102,8 +109,12 @@ class EffectsView(Adw.Bin):
         self.pipeline.changed(effect_id, structural=True)
         self.reload(select=effect_id)
 
+    def _sync_check(self):
+        self.check_button.set_sensitive(self.preset is not None and self.pipeline.chain_running)
+
     def reload(self, select=None):
         self.list.remove_all()
+        self._sync_check()
         self.preset_button.set_label(self.preset.name if self.preset else "Choose a Preset")
         if self.preset is None:
             output = self.pipeline.direction == "output"

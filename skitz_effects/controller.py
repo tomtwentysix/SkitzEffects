@@ -10,7 +10,7 @@ from pathlib import Path
 
 from gi.repository import Gio, GLib, GObject
 
-from . import config, deps, graph, names, plugins, presets
+from . import check, config, deps, graph, names, plugins, presets
 from .config import LAYOUTS
 from .pipewire import PipeWire
 
@@ -155,6 +155,8 @@ class Pipeline(GObject.Object):
         self.playback_node = graph.PLAYBACK if output else graph.MIC_PLAYBACK
         # The steps of the running chain, which the controller links one into the next.
         self._taps = []
+        # Session-only cuts from the distortion check; they are applied to every build but never saved.
+        self.trims = []
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.route = ""
         self._proc = None
@@ -350,6 +352,7 @@ class Pipeline(GObject.Object):
 
     def load_preset(self, name):
         self._flush_save()
+        self.trims = []
         self.preset = presets.load(name, self.direction)
         self.state["preset"] = name if self.preset else ""
         self.controller.settings.save()
@@ -358,6 +361,7 @@ class Pipeline(GObject.Object):
 
     def new_preset(self, name):
         self._flush_save()
+        self.trims = []
         self.preset = presets.create(name, self.direction)
         self.state["preset"] = name
         self.controller.settings.save()
@@ -423,10 +427,12 @@ class Pipeline(GObject.Object):
                 # ALSA's left and right mono profiles keep the unused input as AUX1, which would
                 # otherwise reach the effects' right side.
                 channel = "MONO"
-            return "stereo", graph.build_input(self.preset, enabled, device.name, channel, device.positions)
+            return "stereo", graph.build_input(check.trimmed(self.preset, self.trims), enabled, device.name, channel,
+                                               device.positions)
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
-        return route, graph.build(self.preset, enabled, route, s.layout, s.hrir, device.name, s.surround_levels)
+        return route, graph.build(check.trimmed(self.preset, self.trims), enabled, route, s.layout, s.hrir,
+                                  device.name, check.trimmed_levels(s.layout, s.surround_levels, self.trims))
 
     def _check_rate(self):
         """Restarts the chain when its device changes rate under it.
@@ -502,19 +508,71 @@ class Pipeline(GObject.Object):
     def changed(self, effect_id, structural=False):
         """Called after the UI edits the preset; saves it and applies the change."""
         self._queue_save()
+        if structural and self.preset:
+            self.trims = [t for t in self.trims if t.key == "surround" or t.key in self.preset.order]
         if structural or not self.preset:
             self.queue_rebuild()
             return
-        effect = plugins.effect(presets.kind_of(effect_id))
-        controls = graph.live_controls(effect_id, effect, self.preset.settings(effect_id))
-        if controls is None:
+        if not self._send_live(effect_id):
             self.queue_rebuild()
         elif self.preset.enabled(effect_id) and self.pw:
+            self._sync_conf()
+
+    def _send_live(self, effect_id):
+        """Sends an effect's values to the running chain; False when only a rebuild can apply them."""
+        preset = check.trimmed(self.preset, self.trims)
+        controls = graph.live_controls(effect_id, plugins.effect(presets.kind_of(effect_id)),
+                                       preset.settings(effect_id))
+        if controls is None:
+            return False
+        if preset.enabled(effect_id) and self.pw and self.chain_running:
             node = graph.control_node(self._taps, self.control_node, self.playback_node, effect_id)
             self.pw.set_controls(node, controls)
-            # The running chain now matches the edited preset, so it needs no restart.
-            if self.device:
-                self._conf = self._build(self.device)[1]
+        return True
+
+    def _sync_conf(self):
+        # The running chain now matches the preset, so it needs no restart.
+        if self.device:
+            self._conf = self._build(self.device)[1]
+
+    def fix(self, cuts, save):
+        cuts = [c for c in cuts if c.key == "surround" or (self.preset and c.key in self.preset.order)]
+        all_cuts = self.trims + cuts
+        surround = any(c.control == "surround" for c in all_cuts)
+        s = self.controller.settings
+        levels = check.trimmed_levels(s.layout, s.surround_levels, all_cuts)
+        if save:
+            if self.preset:
+                check.fold(self.preset, all_cuts)
+                self._queue_save()
+            if surround:
+                for channel, gain in levels.items():
+                    gain = round(gain, 6)
+                    if gain:
+                        s.surround_levels[channel] = gain
+                    else:
+                        s.surround_levels.pop(channel, None)
+                s.save()
+            self.trims = []
+            self.emit("preset-changed")
+        else:
+            self.trims = all_cuts
+        live = self.pw and self.chain_running
+        rebuild = False
+        for cut in cuts:
+            if cut.control != "surround":
+                rebuild |= not self._send_live(cut.key)
+            elif live and self.route == "hrir":
+                self.pw.set_controls(self.control_node, graph.level_controls(s.layout, levels))
+        if rebuild:
+            self.queue_rebuild()
+        else:
+            self._sync_conf()
+
+    def stages(self):
+        effect_ids = {graph.node_name(effect_id): effect_id for effect_id in self.preset.order} if self.preset else {}
+        return [check.Stage(key, title, "surround" if tap == "surround" else presets.kind_of(key), stream)
+                for tap, title, stream in self.steps() for key in [effect_ids.get(tap, tap)]]
 
     def set_surround_level(self, channel, gain):
         s = self.controller.settings
@@ -527,7 +585,8 @@ class Pipeline(GObject.Object):
             self.queue_rebuild()
             return
         # The HRIR is the chain's first step, so its controls sit on the chain's own capture node.
-        self.pw.set_controls(self.control_node, graph.level_controls(s.layout, s.surround_levels))
+        levels = check.trimmed_levels(s.layout, s.surround_levels, self.trims)
+        self.pw.set_controls(self.control_node, graph.level_controls(s.layout, levels))
         if self.device:
             self._conf = self._build(self.device)[1]
 

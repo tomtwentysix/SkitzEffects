@@ -1,3 +1,4 @@
+import os
 import json
 from types import SimpleNamespace
 
@@ -105,3 +106,26 @@ def test_meter_settings_load_with_defaults(tmp_path, monkeypatch):
     settings.meters["input"]["tap"] = "equalizer_0"
     settings.save()
     assert config.load().meters["input"]["tap"] == "equalizer_0"
+
+
+def test_tap_energy_counts_the_first_two_channels_and_resets():
+    tap = object.__new__(levels.Tap)
+    tap.channels = 8
+    tap.peak = np.zeros(8)
+    tap.buffer = np.zeros((levels.FFT, 8))
+    tap._partial = b""
+    tap.energy = 0.0
+    tap.frames = 0
+    tap.last = 0.0
+    frames = np.ones((100, 8), np.float32)
+    frames[:, :2] = 0.5
+    read, write = os.pipe()
+    os.write(write, frames.tobytes())
+    tap.fd = read
+    try:
+        assert tap._on_data(read, 0)
+    finally:
+        os.close(read)
+        os.close(write)
+    assert tap.take_energy() == pytest.approx((50.0, 100))
+    assert tap.take_energy() == (0.0, 0)

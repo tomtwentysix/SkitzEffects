@@ -1,4 +1,7 @@
+import json
 import os
+
+import pytest
 
 from skitz_effects.controller import data_loop_threads, input_variants, rate_changed, routable
 
@@ -60,3 +63,156 @@ def test_streams_aimed_at_easy_effects_come_through_skitz_effects():
     assert routable({"node.name": "obs-mic", "target.object": "easyeffects_source"})
     assert not routable({"node.name": "skitz_output", "target.object": "easyeffects_sink"})
 
+
+def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
+    from types import SimpleNamespace
+    from skitz_effects import presets
+    from skitz_effects.controller import Pipeline
+    monkeypatch.setattr(Pipeline, "emit", lambda self, *args: None)
+    monkeypatch.setattr(Pipeline, "queue_rebuild", lambda self: self.rebuilds.append(1))
+    pipeline = Pipeline.__new__(Pipeline)
+    saves = []
+    settings = SimpleNamespace(
+        output={"preset": preset, "enabled": True, "device": ""}, layout=layout, surround_levels={},
+        hrir="/nonexistent/atmos.wav", downmix="auto", save=lambda: saves.append(1))
+    pipeline.controller = SimpleNamespace(settings=settings, pw=None, hrir_ok=lambda: True)
+    pipeline.direction = "output"
+    pipeline.preset = presets.load(preset)
+    pipeline.trims = []
+    pipeline.rebuilds = []
+    pipeline._taps = []
+    pipeline._save_id = 0
+    pipeline._queue_save = lambda: setattr(pipeline, "_save_id", 0) or saves.append("queued")
+    pipeline._proc = None
+    pipeline._conf = ""
+    pipeline._missing_since = 0.0
+    pipeline.route = ""
+    pipeline.control_node = "capture"
+    pipeline.playback_node = "playback"
+    pipeline.saves = saves
+    return pipeline
+
+
+def test_build_includes_the_trims(ee_root, lv2, monkeypatch):
+    from types import SimpleNamespace
+    from skitz_effects import graph
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch)
+    device = SimpleNamespace(name="alsa_output.test", channels=2, positions=["FL", "FR"])
+    pipeline.trims = [Cut("bass_loudness#0", "output-gain", -6.0)]
+    _route, conf = pipeline._build(device)
+    modules = [m for m in json.loads(conf)["context.modules"] if "filter-chain" in m["name"]]
+    nodes = {n["name"]: n for m in modules for n in m["args"]["filter.graph"]["nodes"]}
+    assert nodes["bass_loudness_0_out_l"]["control"]["Mult"] == pytest.approx(graph.db(-9.0))
+    assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -3.0
+
+
+def test_loading_a_preset_drops_the_trims(ee_root, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch)
+    pipeline.trims = [Cut("bass_loudness#0", "output-gain", -6.0)]
+    pipeline.load_preset("Dali iO6")
+    assert pipeline.trims == []
+
+
+def test_a_new_preset_drops_the_trims(ee_root, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch)
+    pipeline.trims = [Cut("bass_loudness#0", "output-gain", -6.0)]
+    pipeline.new_preset("Fresh")
+    assert pipeline.trims == []
+
+
+def test_fix_settings_writes_nothing(ee_root, lv2, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch)
+    path = pipeline.preset.path
+    before = path.read_bytes()
+    cut = Cut("bass_loudness#0", "output-gain", -6.0)
+    pipeline.fix([cut], False)
+    pipeline._flush_save()
+    assert pipeline.trims == [cut]
+    assert path.read_bytes() == before
+    assert pipeline.saves == []
+    assert pipeline.rebuilds == []
+    pipeline.fix([Cut("bass_loudness#0", "output-gain", -1.0)], True)
+    pipeline._flush_save()
+    assert pipeline.trims == []
+    assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -10.0
+    assert json.loads(path.read_text())["output"]["bass_loudness#0"]["output-gain"] == -10.0
+
+
+def test_fix_saves_surround_cuts_into_the_levels(ee_root, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    levels = pipeline.controller.settings.surround_levels
+    levels["FC"] = 3.0
+    levels["RL"] = 2.1
+    pipeline.fix([Cut("surround", "surround", -3.0)], True)
+    assert "FC" not in levels
+    assert levels["FL"] == -3.0
+    assert levels["RL"] == -0.9
+    assert pipeline.trims == []
+    assert pipeline.saves.count(1) == 1
+
+
+def test_stages_map_taps_back_to_effect_ids(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    monkeypatch.setattr(type(pipeline), "steps", lambda self: [
+        ("surround", "Surround Downmix", "a"), ("bass_loudness_0", "Bass Loudness", "b")])
+    stages = pipeline.stages()
+    assert [(s.key, s.kind, s.stream) for s in stages] == [
+        ("surround", "surround", "a"), ("bass_loudness#0", "bass_loudness", "b")]
+
+
+def test_fix_saving_tells_the_views_to_reload(ee_root, lv2, monkeypatch):
+    from skitz_effects.check import Cut
+    from skitz_effects.controller import Pipeline
+    pipeline = make_pipeline(monkeypatch)
+    emitted = []
+    monkeypatch.setattr(Pipeline, "emit", lambda self, name, *args: emitted.append(name))
+    pipeline.fix([Cut("bass_loudness#0", "output-gain", -1.0)], False)
+    assert emitted == []
+    pipeline.fix([Cut("bass_loudness#0", "output-gain", -1.0)], True)
+    assert emitted == ["preset-changed"]
+
+
+def test_fix_ignores_cuts_for_effects_the_preset_lacks(ee_root, lv2, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch)
+    path = pipeline.preset.path
+    before = path.read_text()
+    pipeline.fix([Cut("bass_loudness#9", "output-gain", -1.0)], False)
+    assert pipeline.trims == []
+    pipeline.fix([Cut("bass_loudness#9", "output-gain", -1.0)], True)
+    pipeline._flush_save()
+    assert "bass_loudness#9" not in pipeline.preset.section
+    assert path.read_text() == before
+
+
+def test_a_structural_change_drops_trims_of_removed_effects(ee_root, lv2, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = make_pipeline(monkeypatch)
+    keep, gone = Cut("bass_loudness#0", "output-gain", -1.0), Cut("bass_loudness#7", "output-gain", -1.0)
+    surround = Cut("surround", "surround", -1.0)
+    pipeline.trims = [keep, gone, surround]
+    pipeline.changed("bass_loudness#0")
+    assert pipeline.trims == [keep, gone, surround]
+    pipeline.changed("bass_loudness#7", structural=True)
+    assert pipeline.trims == [keep, surround]
+
+
+def test_the_input_build_includes_the_trims(ee_root, lv2, monkeypatch):
+    from types import SimpleNamespace
+    from skitz_effects import graph
+    from skitz_effects.check import Cut
+    seen = []
+    monkeypatch.setattr(graph, "build_input", lambda preset, *args: seen.append(preset) or "{}")
+    pipeline = make_pipeline(monkeypatch)
+    pipeline.direction = "input"
+    pipeline.controller.settings.input = {"enabled": True, "device_channels": {}}
+    pipeline.trims = [Cut("bass_loudness#0", "output-gain", -6.0)]
+    device = SimpleNamespace(name="alsa_input.test", positions=["FL", "FR"])
+    pipeline._build(device)
+    assert seen[0].settings("bass_loudness#0")["output-gain"] == -9.0
+    assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -3.0
