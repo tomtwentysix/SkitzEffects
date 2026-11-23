@@ -12,7 +12,7 @@ from . import config, deps, migrate  # noqa: E402
 from .controller import Controller  # noqa: E402
 from .ui.unsaved import ask, unsaved_pipelines  # noqa: E402
 
-VERSION = "1.0.18"
+VERSION = "1.1.0"
 ICONS = Path(__file__).parent.parent / "data" / "icons"
 DEVELOPER = "SolarFlare Developments"
 

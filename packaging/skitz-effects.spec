@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.0.18
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -59,6 +59,26 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Mon Nov 23 2026 Tom <tom@solarflareit.co.uk> - 1.1.0-1
+- A Distortion Check on the Effects page listens to every stage of the chain while audio plays, logs
+  where the signal goes over 0 dB and where the level drops sharply, then offers to lower each stage
+  that clipped: Apply, Apply and Run Again, Apply and Save, or Cancel.
+- Presets are only written when saved. Edits play straight away and the preset picker marks unsaved
+  changes; switching preset, a device change that loads another preset, and quitting ask whether to
+  save, cancel or discard, bringing the window forward from the tray when needed.
+- Surround channel levels belong to each output device and have their own Save button. Levels set
+  before this release move to the device in use.
+- Every number setting is a slider with its exact value beside it, logarithmic for frequencies and
+  times, and every setting explains itself in a tooltip.
+- Bass Loudness's Link is hidden and kept off, as it turned Loudness into a fader and cut the level by
+  over 20 dB, and its Output stops at -3 dB, as above -6 dB it rises to +60 dB.
+- Each effect's output gain is shown last on its page, where it acts on the signal.
+- The status bar's sliders are named Output Volume and Input Volume, as they are the system volumes.
+- The HRIR downmix no longer lowers every channel by about 8 to 10 dB, added in 1.0.18 on the mistaken
+  belief that PipeWire's own downmix does the same; it does not by default. Surround audio is that
+  much louder than in 1.0.18. If a setup now breaks up, the Distortion Check finds where, or the output
+  device's surround levels can be lowered.
+
 * Wed Nov 18 2026 Tom <tom@solarflareit.co.uk> - 1.0.18-1
 - The HRIR downmix leaves the same headroom as PipeWire's own stereo downmix, so 5.1 and 7.1 games
   no longer reach the effects about 9 dB hotter than stereo and break up in the low end. Surround
