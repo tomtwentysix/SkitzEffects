@@ -2,10 +2,10 @@ from pathlib import Path
 
 from gi.repository import Adw, Gtk
 
-from .. import presets
+from .. import plugins, presets
 from ..config import LAYOUTS as CHANNELS
 from .irs import import_ir
-from .rows import full_names
+from .rows import SliderRow, full_names
 
 LAYOUTS = (("stereo", "Stereo"), ("5.1", "5.1 Surround"), ("7.1", "7.1 Surround"))
 DOWNMIX = (("auto", "When the device needs it"), ("always", "Always"), ("never", "Never"))
@@ -14,6 +14,7 @@ ROUTES = {
     "hrir": "Downmixed to stereo through the HRIR",
     "stereo": "Mixed down to stereo without an HRIR",
 }
+LEVEL = plugins.Param("level", "", lo=-12, hi=12, step=0.5, digits=1, unit="dB")
 CHANNEL_TITLES = {"FL": "Front Left", "FR": "Front Right", "FC": "Centre", "LFE": "Subwoofer",
                   "RL": "Rear Left", "RR": "Rear Right", "SL": "Side Left", "SR": "Side Right"}
 
@@ -87,10 +88,8 @@ class SurroundGroup(Adw.PreferencesGroup):
         positions = CHANNELS[settings.layout] if settings.layout != "stereo" else ()
         self._level_rows = []
         for ch in positions:
-            adjustment = Gtk.Adjustment(lower=-12, upper=12, step_increment=0.5, page_increment=3,
-                                        value=self.controller.output.levels.get(ch, 0))
-            row = Adw.SpinRow(title=CHANNEL_TITLES[ch], subtitle="dB", adjustment=adjustment, digits=1)
-            row.connect("notify::value", lambda r, _, ch=ch: self._on_level(ch, r))
+            row = SliderRow(CHANNEL_TITLES[ch], LEVEL, self.controller.output.levels.get(ch, 0))
+            row.connect("value-changed", lambda r, ch=ch: self._on_level(ch, r))
             row.channel = ch
             self.levels_row.add_row(row)
             self._level_rows.append(row)

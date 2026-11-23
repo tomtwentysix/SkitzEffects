@@ -121,8 +121,8 @@ EFFECTS = {
     "bass_loudness": {
         "loudness": "How much bass is added to make up for quiet listening: -6 dB leaves the sound flat, higher "
                     "values add bass (about +34 dB at 60 Hz at the top), lower values take it away",
-        "output": "Level after the bass correction: -6 dB leaves the level unchanged; above that the gain rises "
-                  "steeply, to about +10 dB at -3 dB and +60 dB at 0 dB",
+        "output": "Level after the bass correction: -6 dB leaves the level unchanged, and the gain rises steeply "
+                  "above it, to about +10 dB at the top of the slider",
     },
     "deepfilternet": {
         "attenuation-limit": "The most the noise may be lowered; 100 dB removes as much as it can, lower values "
