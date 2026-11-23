@@ -505,8 +505,7 @@ class Pipeline(GObject.Object):
         if pending.preset:
             self._switch_preset(pending.preset, pending.new)
         if pending.device is not None:
-            self.levels_owner = pending.device
-            self.levels = self._saved_levels()
+            self._take_levels(pending.device)
             self.controller.settings.save()
             self.emit("state-changed")
             self.queue_rebuild()

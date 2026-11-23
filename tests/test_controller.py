@@ -643,3 +643,27 @@ def test_a_preset_switch_saves_only_the_preset(ee_root, lv2, monkeypatch):
     pipeline.resolve("save")
     assert pipeline.controller.settings.output["device_surround_levels"]["a"] == {"FC": 1.0}
     assert pipeline.levels_unsaved
+
+
+def preset_only_device_switch(monkeypatch, choice):
+    pipeline = device_pipeline(monkeypatch)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    pipeline.resolve("cancel")
+    pipeline.state["device_presets"]["a"] = "Laptop"
+    edit_gain(pipeline, -7.0)
+    pipeline.select_device("a")
+    assert pipeline.pending.preset == "Laptop"
+    assert not pipeline.levels_replaced
+    pipeline.resolve(choice)
+    return pipeline
+
+
+@pytest.mark.parametrize("choice", ["save", "discard"])
+def test_a_preset_only_device_switch_keeps_edited_levels(ee_root, lv2, monkeypatch, choice):
+    pipeline = preset_only_device_switch(monkeypatch, choice)
+    assert pipeline.state["preset"] == "Laptop"
+    assert not pipeline.unsaved
+    assert pipeline.levels == {"FC": 4.0}
+    assert pipeline.levels_owner == "a"
+    assert pipeline.levels_unsaved

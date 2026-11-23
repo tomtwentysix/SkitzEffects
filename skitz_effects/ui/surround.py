@@ -62,7 +62,6 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._level_rows = []
         self._showing_levels = False
         self._fill_levels()
-        self._sync_save()
 
         controller.output.connect("state-changed", lambda *_: self._show_levels())
         controller.output.connect("unsaved-changed", lambda *_: (self._show_levels(), self._sync_save()))
@@ -113,6 +112,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         self.save_button.set_sensitive(self.controller.output.levels_unsaved)
 
     def refresh(self):
+        self._sync_save()
         sink = self.controller.output.device
         route = ROUTES.get(self.controller.output.route, "Not running")
         if sink:
