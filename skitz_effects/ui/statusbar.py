@@ -193,8 +193,8 @@ class StatusBar(Gtk.ActionBar):
         self.pack_start(PeakMeter(meters, "input", "audio-input-microphone-symbolic", "Microphone"))
         inputs = controller.input
         self.volumes = (
-            VolumeControl(controller, lambda: graph.SINK, "Output Pre-Gain",
-                          "Volume of everything apps play, before the output effects",
+            VolumeControl(controller, lambda: graph.SINK, "Output Volume",
+                          "The system output volume, applied to everything apps play before the output effects",
                           ("audio-volume-high-symbolic", "audio-volume-muted-symbolic")),
             VolumeControl(controller, lambda: inputs.device and inputs.device.name, "Mic Pre-Gain",
                           "Microphone volume, before the input effects",
