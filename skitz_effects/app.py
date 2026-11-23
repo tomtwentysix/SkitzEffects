@@ -146,7 +146,9 @@ class SkitzEffectsApplication(Adw.Application):
         edited = unsaved_pipelines(self.controller.pipelines)
         if not edited:
             self._quit()
-        elif self._prompt is None:
+        elif self._prompt is not None:
+            self.activate()
+        else:
             self.activate()
             self._prompt_is_quit = True
             self._prompt = ask(self.window(), edited, True,

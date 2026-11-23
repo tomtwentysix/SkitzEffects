@@ -109,7 +109,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._showing_levels = False
 
     def _sync_save(self):
-        self.save_button.set_sensitive(self.controller.output.levels_unsaved)
+        self.save_button.set_sensitive(bool(self.controller.output.levels_owner) and self.controller.output.levels_unsaved)
 
     def refresh(self):
         self._sync_save()

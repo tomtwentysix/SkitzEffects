@@ -371,7 +371,8 @@ class Pipeline(GObject.Object):
         edited_preset = self.unsaved and rule != self.state["preset"]
         edited_levels = self.levels_unsaved and bool(self.levels_owner) and name != self.levels_owner
         if (rule and edited_preset) or edited_levels:
-            self.pending = Pending(rule, False, name)
+            replaces = rule if rule != self.state["preset"] else None
+            self.pending = Pending(replaces, False, name)
             self.emit("switch-pending")
         else:
             if self.pending and self.pending.device is not None:
@@ -426,9 +427,7 @@ class Pipeline(GObject.Object):
     def levels_unsaved(self):
         if self.direction != "output":
             return False
-        channels = LAYOUTS[self.controller.settings.layout]
-        live = {c: g for c, g in self.levels.items() if g and c in channels}
-        return live != {c: g for c, g in self._saved_levels().items() if g and c in channels}
+        return {c: g for c, g in self.levels.items() if g} != {c: g for c, g in self._saved_levels().items() if g}
 
     def save_levels(self):
         if self.direction != "output" or not self.levels_owner:
@@ -683,7 +682,8 @@ class Pipeline(GObject.Object):
         surround = any(c.control == "surround" for c in cuts)
         if surround:
             levels = check.trimmed_levels(s.layout, self.levels, cuts)
-            self.levels = {c: round(g, 6) for c, g in levels.items() if round(g, 6)}
+            trimmed = {c: round(g, 6) for c, g in levels.items()}
+            self.levels = {c: g for c, g in {**self.levels, **trimmed}.items() if g}
         rebuild = False
         for cut in cuts:
             if cut.control != "surround":

@@ -378,13 +378,54 @@ def test_choosing_a_first_device_loads_its_levels_when_unedited(monkeypatch):
     assert not pipeline.levels_unsaved
 
 
-def test_levels_of_another_layout_are_not_an_edit(monkeypatch):
+def test_levels_equal_to_saved_are_not_an_edit_in_any_layout(monkeypatch):
     pipeline = make_pipeline(monkeypatch, layout="5.1")
     pipeline.levels_owner = "a"
-    pipeline.levels = {"SL": 2.0}
+    pipeline.state["device_surround_levels"]["a"] = {"SL": 2.0}
+    pipeline.levels = {"SL": 2.0, "FC": 0.0}
     assert not pipeline.levels_unsaved
-    pipeline.controller.settings.layout = "7.1"
+    pipeline.controller.settings.layout = "stereo"
+    assert not pipeline.levels_unsaved
+
+
+def test_an_edit_outside_the_layout_still_counts(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, layout="7.1")
+    pipeline.set_surround_level("SL", 3.0)
+    pipeline.controller.settings.layout = "stereo"
     assert pipeline.levels_unsaved
+    pipeline.select_device("b")
+    assert pipeline.pending.device == "b"
+    assert pipeline.levels_replaced
+
+
+def test_apply_cuts_keeps_levels_outside_the_layout(ee_root, monkeypatch):
+    from skitz_effects.check import Cut
+    pipeline = device_pipeline(monkeypatch, layout="stereo")
+    pipeline.levels = {"FL": 1.0, "SL": 2.0}
+    pipeline.apply_cuts([Cut("surround", "surround", -1.0)])
+    assert pipeline.levels == {"SL": 2.0, "FR": -1.0}
+
+
+def test_a_rule_equal_to_the_current_preset_is_not_replaced(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Dali iO6"})
+    edit_gain(pipeline, -7.0)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    assert pipeline.pending.preset is None
+    assert not pipeline.preset_replaced
+    assert pipeline.levels_replaced
+    pipeline.resolve("discard")
+    assert pipeline.unsaved
+    assert pipeline.levels == {"FC": -2.0}
+
+
+def test_viewing_missing_equaliser_bands_is_not_an_edit(ee_root, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    settings = pipeline.preset.settings("equalizer#0")
+    settings["num-bands"] = 12
+    pipeline.saved = pipeline._snapshot()
+    assert "band11" in pipeline.saved["output"]["equalizer#0"]["left"]
+    assert not pipeline.unsaved
 
 
 def test_switching_from_unsaved_waits(ee_root, lv2, monkeypatch):
