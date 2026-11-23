@@ -207,13 +207,20 @@ class EffectsView(Adw.Bin):
             response = Adw.PreferencesGroup()
             response.add(EqualizerEditor(settings, on_change, self.meters))
             page.add(response)
+        changed = (lambda: on_change(True)) if effect.kind == "convolver" else on_change
+        shown = effect.shown()
         group = Adw.PreferencesGroup()
-        for param in effect.shown():
-            group.add(param_row(param, settings, (lambda: on_change(True)) if effect.kind == "convolver"
-                                else on_change))
+        for param in shown:
+            if param.key != "output-gain":
+                group.add(param_row(param, settings, changed))
         page.add(group)
         if effect.kind == "equalizer":
             self._equalizer_groups(page, settings, on_change)
+        for param in shown:
+            if param.key == "output-gain":
+                output = Adw.PreferencesGroup()
+                output.add(param_row(param, settings, changed))
+                page.add(output)
         return page
 
     def _convolver_group(self, settings, on_change):
