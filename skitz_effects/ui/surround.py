@@ -36,7 +36,8 @@ class SurroundGroup(Adw.PreferencesGroup):
                                                        "file.")
         self.controller = controller
         settings = controller.settings
-        self.save_button = Gtk.Button(label="Save", valign=Gtk.Align.CENTER, tooltip_text="Save Channel Levels")
+        self.save_button = Gtk.Button(icon_name="media-floppy-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
+                                      tooltip_text="Save Channel Levels")
         self.save_button.connect("clicked", lambda _b: controller.output.save_levels())
         self.set_header_suffix(self.save_button)
         self.route_row = Adw.ActionRow(title="Route")
