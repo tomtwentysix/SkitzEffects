@@ -150,15 +150,8 @@ HRIR_TAIL = 32768
 # first 2048 samples and the rest is over 55 dB down. Cutting it there keeps 16 convolvers cheap
 # enough to run without crackling, at 96 kHz too.
 HRIR_LENGTH = 2048
-# Each ear sums its front channel with 0.707 of every centre or surround channel, as a matrix downmix
-# would, so a sound in every channel can reach about 3.1 times full scale. Dividing by that sum keeps
-# it from clipping. Without it, a 7.1 game broke up through the HRIR alone. PipeWire's own downmix
-# does not do this by default (channelmix.normalize is off), so it is louder than this route.
-HRIR_HEADROOM = {"5.1": 1 / (1 + 2 * 0.707), "7.1": 1 / (1 + 3 * 0.707)}
-
-
-def surround_gain(layout, levels, ch):
-    return db((levels or {}).get(ch, 0)) * HRIR_HEADROOM.get(layout, 1.0)
+def surround_gain(levels, ch):
+    return db((levels or {}).get(ch, 0))
 
 
 def hrir_downmix(graph, layout, hrir, levels=None):
@@ -166,7 +159,7 @@ def hrir_downmix(graph, layout, hrir, levels=None):
     remap = HRIR_SOURCE.get(layout, {})
     left, right = [], []
     for ch in LAYOUTS[layout]:
-        src = graph.inlet(f"in_{ch}", surround_gain(layout, levels, ch))
+        src = graph.inlet(f"in_{ch}", surround_gain(levels, ch))
         ir_l, ir_r = HESUVI[remap.get(ch, ch)]
         left.append(graph.convolver(f"hrir_{ch}_l", hrir, ir_l, source=f"{src}:Out", tailsize=HRIR_TAIL,
                                     length=HRIR_LENGTH))
@@ -178,7 +171,7 @@ def hrir_downmix(graph, layout, hrir, levels=None):
 
 def level_controls(layout, levels):
     """Control updates that apply surround levels to a running HRIR chain."""
-    return {f"in_{ch}:Mult": surround_gain(layout, levels, ch) for ch in LAYOUTS[layout]}
+    return {f"in_{ch}:Mult": surround_gain(levels, ch) for ch in LAYOUTS[layout]}
 
 
 def effect_chain(preset, enabled):

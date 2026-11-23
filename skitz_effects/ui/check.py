@@ -19,13 +19,11 @@ def overs_text(reading):
     return f"Over by up to {_db(20 * log10(reading.peak))}, {reading.overs} {times}"
 
 
-def change_text(stage, change, layout):
+def change_text(change):
     if change is None:
         return None
-    if check.drop_flagged(stage, change, layout):
+    if check.drop_flagged(change):
         return f"Drops {_db(-change)}"
-    if stage.kind == "surround":
-        return f"{_db(change)}, headroom, expected"
     return f"{change:+.1f} dB"
 
 
@@ -164,11 +162,11 @@ class CheckDialog(Adw.Dialog):
             reading = check_.readings[stage.key]
             change = check.level_change(before, reading)
             before = reading
-            lines = [overs_text(reading), change_text(stage, change, settings.layout)]
+            lines = [overs_text(reading), change_text(change)]
             if stage.key in planned:
                 lines.append(cut_text(planned[stage.key]))
             row = Adw.ActionRow(title=stage.title, subtitle="\n".join(line for line in lines if line))
-            if change is not None and check.drop_flagged(stage, change, settings.layout):
+            if change is not None and check.drop_flagged(change):
                 row.add_prefix(Gtk.Image(icon_name="dialog-warning-symbolic"))
             group.add(row)
         page = Adw.PreferencesPage()

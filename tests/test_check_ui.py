@@ -11,19 +11,20 @@ def test_overs_text():
     assert ui.overs_text(R(peak=10 ** (0.5 / 20), overs=1)) == "Over by up to 0.5 dB, 1 time"
 
 
-def test_surround_within_its_headroom_is_expected():
-    assert ui.change_text(S("surround", "surround"), -9.9, "7.1") == "-9.9 dB, headroom, expected"
+def test_the_surround_stage_has_no_expected_drop():
+    assert ui.change_text(-3.0) == "-3.0 dB"
+    assert ui.change_text(-9.9) == "Drops 9.9 dB"
 
 
 def test_a_flagged_drop_is_reported_as_a_drop():
-    assert ui.change_text(S("equalizer#0", "equalizer"), -23.4, "7.1") == "Drops 23.4 dB"
-    assert ui.change_text(S("surround", "surround"), -30.0, "7.1") == "Drops 30.0 dB"
+    assert ui.change_text(-23.4) == "Drops 23.4 dB"
+    assert ui.change_text(-30.0) == "Drops 30.0 dB"
 
 
 def test_ordinary_changes_and_unmeasured_stages():
-    assert ui.change_text(S("equalizer#0", "equalizer"), -2.04, "7.1") == "-2.0 dB"
-    assert ui.change_text(S("equalizer#0", "equalizer"), 3.0, "7.1") == "+3.0 dB"
-    assert ui.change_text(S("equalizer#0", "equalizer"), None, "7.1") is None
+    assert ui.change_text(-2.04) == "-2.0 dB"
+    assert ui.change_text(3.0) == "+3.0 dB"
+    assert ui.change_text(None) is None
 
 
 def test_planned_cut_text_for_each_control():

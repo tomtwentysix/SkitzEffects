@@ -67,17 +67,14 @@ def test_nothing_measured_plans_nothing():
     readings = {s.key: check.Reading() for s in stages}
     assert check.plan_cuts(stages, readings, AMPLE) == ([], 0.0)
     assert check.level_change(check.Reading(), check.Reading()) is None
-    assert check.drop_flagged(stages[1], None, "7.1") is False
+    assert check.drop_flagged(None) is False
 
 
 def test_drops():
     change = check.level_change(check.Reading(energy=1.0, frames=10), check.Reading(energy=0.01, frames=10))
     assert change == pytest.approx(-20.0)
-    eq, surround = S("equalizer#0", "equalizer"), S("surround", "surround")
-    assert check.drop_flagged(eq, -7.0, "7.1")
-    assert not check.drop_flagged(eq, -5.0, "7.1")
-    assert not check.drop_flagged(surround, -15.0, "7.1")
-    assert check.drop_flagged(surround, -17.0, "7.1")
+    assert check.drop_flagged(-7.0)
+    assert not check.drop_flagged(-5.0)
 
 
 def test_level_change_compares_mean_power():
@@ -88,7 +85,7 @@ def test_level_change_compares_mean_power():
 def test_a_silent_output_is_a_drop():
     change = check.level_change(check.Reading(energy=1.0, frames=10), check.Reading(frames=10))
     assert change == -120.0
-    assert check.drop_flagged(S("equalizer#0", "equalizer"), change, "7.1")
+    assert check.drop_flagged(change)
     assert check.level_change(check.Reading(frames=10), check.Reading(frames=10)) is None
 
 

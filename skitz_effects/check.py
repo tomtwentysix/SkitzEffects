@@ -4,7 +4,6 @@ from math import ceil, log10
 
 from . import plugins
 from .config import LAYOUTS
-from .graph import HRIR_HEADROOM
 
 CUT_MARGIN_DB = 0.5
 DROP_DB = -6.0
@@ -79,13 +78,8 @@ def level_change(before, after):
     return max(SILENCE_DB, 10 * log10((after.energy / after.frames) / (before.energy / before.frames)))
 
 
-def drop_flagged(stage, change, layout):
-    if change is None:
-        return False
-    limit = DROP_DB
-    if stage.kind == "surround":
-        limit += 20 * log10(HRIR_HEADROOM.get(layout, 1.0))
-    return change < limit
+def drop_flagged(change):
+    return change is not None and change < DROP_DB
 
 
 def trimmed_levels(layout, levels, cuts):
