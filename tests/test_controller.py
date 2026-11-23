@@ -1,5 +1,6 @@
 import json
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -68,7 +69,7 @@ def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
     from types import SimpleNamespace
     from skitz_effects import presets
     from skitz_effects.controller import Pipeline
-    monkeypatch.setattr(Pipeline, "emit", lambda self, *args: None)
+    monkeypatch.setattr(Pipeline, "emit", lambda self, name, *args: self.emitted.append(name))
     monkeypatch.setattr(Pipeline, "queue_rebuild", lambda self: self.rebuilds.append(1))
     pipeline = Pipeline.__new__(Pipeline)
     saves = []
@@ -78,11 +79,11 @@ def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
     pipeline.controller = SimpleNamespace(settings=settings, pw=None, hrir_ok=lambda: True)
     pipeline.direction = "output"
     pipeline.preset = presets.load(preset)
+    pipeline.saved = pipeline._snapshot()
+    pipeline.emitted = []
     pipeline.trims = []
     pipeline.rebuilds = []
     pipeline._taps = []
-    pipeline._save_id = 0
-    pipeline._queue_save = lambda: setattr(pipeline, "_save_id", 0) or saves.append("queued")
     pipeline._proc = None
     pipeline._conf = ""
     pipeline._missing_since = 0.0
@@ -130,13 +131,12 @@ def test_fix_settings_writes_nothing(ee_root, lv2, monkeypatch):
     before = path.read_bytes()
     cut = Cut("bass_loudness#0", "output-gain", -6.0)
     pipeline.fix([cut], False)
-    pipeline._flush_save()
     assert pipeline.trims == [cut]
     assert path.read_bytes() == before
     assert pipeline.saves == []
     assert pipeline.rebuilds == []
     pipeline.fix([Cut("bass_loudness#0", "output-gain", -1.0)], True)
-    pipeline._flush_save()
+    assert not pipeline.unsaved
     assert pipeline.trims == []
     assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -10.0
     assert json.loads(path.read_text())["output"]["bass_loudness#0"]["output-gain"] == -10.0
@@ -167,14 +167,11 @@ def test_stages_map_taps_back_to_effect_ids(ee_root, lv2, monkeypatch):
 
 def test_fix_saving_tells_the_views_to_reload(ee_root, lv2, monkeypatch):
     from skitz_effects.check import Cut
-    from skitz_effects.controller import Pipeline
     pipeline = make_pipeline(monkeypatch)
-    emitted = []
-    monkeypatch.setattr(Pipeline, "emit", lambda self, name, *args: emitted.append(name))
     pipeline.fix([Cut("bass_loudness#0", "output-gain", -1.0)], False)
-    assert emitted == []
+    assert pipeline.emitted == []
     pipeline.fix([Cut("bass_loudness#0", "output-gain", -1.0)], True)
-    assert emitted == ["preset-changed"]
+    assert "preset-changed" in pipeline.emitted
 
 
 def test_fix_ignores_cuts_for_effects_the_preset_lacks(ee_root, lv2, monkeypatch):
@@ -185,7 +182,6 @@ def test_fix_ignores_cuts_for_effects_the_preset_lacks(ee_root, lv2, monkeypatch
     pipeline.fix([Cut("bass_loudness#9", "output-gain", -1.0)], False)
     assert pipeline.trims == []
     pipeline.fix([Cut("bass_loudness#9", "output-gain", -1.0)], True)
-    pipeline._flush_save()
     assert "bass_loudness#9" not in pipeline.preset.section
     assert path.read_text() == before
 
@@ -216,3 +212,81 @@ def test_the_input_build_includes_the_trims(ee_root, lv2, monkeypatch):
     pipeline._build(device)
     assert seen[0].settings("bass_loudness#0")["output-gain"] == -9.0
     assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -3.0
+
+
+def edit_gain(pipeline, value):
+    pipeline.preset.settings("bass_loudness#0")["output-gain"] = value
+    pipeline.changed("bass_loudness#0")
+
+
+def test_edits_are_live_but_unsaved(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    path = pipeline.preset.path
+    before = path.read_bytes()
+    assert not pipeline.unsaved
+    edit_gain(pipeline, -7.0)
+    assert pipeline.unsaved
+    assert "unsaved-changed" in pipeline.emitted
+    assert path.read_bytes() == before
+    pipeline.emitted.clear()
+    pipeline.save_preset()
+    assert json.loads(path.read_text())["output"]["bass_loudness#0"]["output-gain"] == -7.0
+    assert not pipeline.unsaved
+    assert pipeline.emitted == ["unsaved-changed"]
+
+
+def test_editing_back_clears_unsaved(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    edit_gain(pipeline, -3.0)
+    assert not pipeline.unsaved
+
+
+def test_discard_restores_the_saved_preset(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    order = list(pipeline.preset.order)
+    pipeline.preset.remove("limiter#0")
+    pipeline.preset.settings("bass_loudness#0")["output-gain"] = -7.0
+    pipeline.changed("limiter#0", structural=True)
+    assert pipeline.unsaved
+    pipeline.emitted.clear()
+    pipeline.discard_preset()
+    assert pipeline.preset.order == order
+    assert pipeline.preset.settings("bass_loudness#0")["output-gain"] == -3.0
+    assert not pipeline.unsaved
+    assert "preset-changed" in pipeline.emitted
+    assert "unsaved-changed" in pipeline.emitted
+
+
+def test_loading_and_quitting_write_nothing(ee_root, lv2, monkeypatch):
+    from skitz_effects.controller import Pipeline
+    pipeline = make_pipeline(monkeypatch)
+    path = pipeline.preset.path
+    before = path.read_bytes()
+    edit_gain(pipeline, -7.0)
+    monkeypatch.setattr(Pipeline, "_stop_chain", lambda self: None)
+    monkeypatch.setattr(Pipeline, "_route_streams", lambda self: None)
+    pipeline.virtual = "skitz_sink"
+    pipeline.controller.pw = SimpleNamespace(set_default=lambda name: None, destroy=lambda name: None)
+    pipeline.shutdown()
+    assert path.read_bytes() == before
+    pipeline.load_preset("Laptop")
+    assert path.read_bytes() == before
+    assert not pipeline.unsaved
+
+
+def test_the_mixer_switch_saves_only_the_blocklist(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    monkeypatch.setattr(type(pipeline), "_route_streams", lambda self: None)
+    path = pipeline.preset.path
+    saved = json.loads(path.read_text())
+    edit_gain(pipeline, -7.0)
+    pipeline.set_blocked({"application.id": "org.example.App"}, True)
+    on_disk = json.loads(path.read_text())
+    assert on_disk["output"]["blocklist"] == ["org.example.App"]
+    on_disk["output"]["blocklist"] = saved["output"]["blocklist"]
+    assert on_disk == saved
+    assert pipeline.unsaved
+    pipeline.discard_preset()
+    assert pipeline.preset.section["blocklist"] == ["org.example.App"]
+    assert not pipeline.unsaved

@@ -76,9 +76,17 @@ class Preset:
         self.order.insert(j, self.order.pop(i))
 
     def save(self):
+        self._write(self.data)
+
+    def save_blocklist(self, blocklist):
+        data = json.loads(self.path.read_text())
+        data.setdefault(self.section_name, {})["blocklist"] = list(blocklist)
+        self._write(data)
+
+    def _write(self, data):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=4))
+        tmp.write_text(json.dumps(data, indent=4))
         tmp.replace(self.path)
 
 

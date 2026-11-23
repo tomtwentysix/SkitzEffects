@@ -1,5 +1,6 @@
 """Keeps the virtual devices, the filter-chain processes and the loaded presets in step with PipeWire."""
 
+import copy
 import ctypes
 import os
 import resource
@@ -139,6 +140,7 @@ class Pipeline(GObject.Object):
     __gsignals__ = {
         "preset-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "state-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "unsaved-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self, controller, direction):
@@ -158,6 +160,7 @@ class Pipeline(GObject.Object):
         # Session-only cuts from the distortion check; they are applied to every build but never saved.
         self.trims = []
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
+        self.saved = self._snapshot()
         self.route = ""
         self._proc = None
         self._started = 0.0
@@ -167,7 +170,6 @@ class Pipeline(GObject.Object):
         self._rate = 0
         self._rate_restart_id = 0
         self._conf = ""
-        self._save_id = 0
         self._rebuild_id = 0
 
     @property
@@ -317,7 +319,9 @@ class Pipeline(GObject.Object):
             blocklist.append(key)
         elif not on and key in blocklist:
             blocklist.remove(key)
-        self._queue_save()
+        self.preset.save_blocklist(blocklist)
+        self.saved.setdefault(self.preset.section_name, {})["blocklist"] = list(blocklist)
+        self.emit("unsaved-changed")
         self._route_streams()
 
     def choose_device(self, name):
@@ -350,19 +354,40 @@ class Pipeline(GObject.Object):
         self.emit("state-changed")
         self.queue_rebuild()
 
+    def _snapshot(self):
+        return copy.deepcopy(self.preset.data) if self.preset else None
+
+    @property
+    def unsaved(self):
+        return bool(self.preset) and self.preset.data != self.saved
+
+    def save_preset(self):
+        if self.preset:
+            self.preset.save()
+            self.saved = self._snapshot()
+        self.emit("unsaved-changed")
+
+    def discard_preset(self):
+        if self.preset:
+            self.preset.data.clear()
+            self.preset.data.update(copy.deepcopy(self.saved))
+        self.emit("preset-changed")
+        self.emit("unsaved-changed")
+        self.queue_rebuild()
+
     def load_preset(self, name):
-        self._flush_save()
         self.trims = []
         self.preset = presets.load(name, self.direction)
+        self.saved = self._snapshot()
         self.state["preset"] = name if self.preset else ""
         self.controller.settings.save()
         self.emit("preset-changed")
         self.queue_rebuild()
 
     def new_preset(self, name):
-        self._flush_save()
         self.trims = []
         self.preset = presets.create(name, self.direction)
+        self.saved = self._snapshot()
         self.state["preset"] = name
         self.controller.settings.save()
         self.emit("preset-changed")
@@ -506,8 +531,8 @@ class Pipeline(GObject.Object):
         return self._proc is not None and self._proc.returncode is None
 
     def changed(self, effect_id, structural=False):
-        """Called after the UI edits the preset; saves it and applies the change."""
-        self._queue_save()
+        """Called after the UI edits the preset; applies the change without saving it."""
+        self.emit("unsaved-changed")
         if structural and self.preset:
             self.trims = [t for t in self.trims if t.key == "surround" or t.key in self.preset.order]
         if structural or not self.preset:
@@ -544,7 +569,7 @@ class Pipeline(GObject.Object):
         if save:
             if self.preset:
                 check.fold(self.preset, all_cuts)
-                self._queue_save()
+                self.save_preset()
             if surround:
                 for channel, gain in levels.items():
                     gain = round(gain, 6)
@@ -591,30 +616,12 @@ class Pipeline(GObject.Object):
             self._conf = self._build(self.device)[1]
 
     def shutdown(self):
-        self._flush_save()
         self._stop_chain()
         self._route_streams()
         if self.direction == "output" and self.state["device"]:
             # Hand the default back to the device, or WirePlumber picks one of its own.
             self.pw.set_default(self.state["device"])
         self.pw.destroy(self.virtual)
-
-    def _queue_save(self):
-        if self._save_id:
-            GLib.source_remove(self._save_id)
-        self._save_id = GLib.timeout_add(500, self._on_save_timeout)
-
-    def _on_save_timeout(self):
-        self._save_id = 0
-        return self._flush_save()
-
-    def _flush_save(self):
-        if self._save_id:
-            GLib.source_remove(self._save_id)
-            self._save_id = 0
-        if self.preset:
-            self.preset.save()
-        return False
 
 
 class Controller(GObject.Object):
