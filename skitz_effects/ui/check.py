@@ -152,7 +152,7 @@ class CheckDialog(Adw.Dialog):
         pipeline = self.pipeline
         settings = pipeline.controller.settings
         trimmed = check.trimmed(pipeline.preset, pipeline.trims)
-        levels = check.trimmed_levels(settings.layout, settings.surround_levels, pipeline.trims)
+        levels = check.trimmed_levels(settings.layout, pipeline.levels, pipeline.trims)
         room = check.room(trimmed, check_.stages, settings.layout, levels)
         self.cuts, leftover = check.plan_cuts(check_.stages, check_.readings, room)
         planned = {cut.key: cut for cut in self.cuts}

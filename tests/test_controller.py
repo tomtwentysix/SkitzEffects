@@ -74,7 +74,9 @@ def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
     pipeline = Pipeline.__new__(Pipeline)
     saves = []
     settings = SimpleNamespace(
-        output={"preset": preset, "enabled": True, "device": ""}, layout=layout, surround_levels={},
+        output={"preset": preset, "enabled": True, "device": "", "device_surround_levels": {},
+                "device_presets": {}, "device_names": {}},
+        layout=layout,
         hrir="/nonexistent/atmos.wav", downmix="auto", save=lambda: saves.append(1))
     pipeline.controller = SimpleNamespace(settings=settings, pw=None, hrir_ok=lambda: True)
     pipeline.direction = "output"
@@ -82,12 +84,15 @@ def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
     pipeline.saved = pipeline._snapshot()
     pipeline.emitted = []
     pipeline.trims = []
+    pipeline.levels = {}
+    pipeline.levels_owner = ""
     pipeline.rebuilds = []
     pipeline._taps = []
     pipeline._proc = None
     pipeline._conf = ""
     pipeline._missing_since = 0.0
     pipeline.route = ""
+    pipeline.virtual = "skitz_sink"
     pipeline.control_node = "capture"
     pipeline.playback_node = "playback"
     pipeline.saves = saves
@@ -145,10 +150,12 @@ def test_fix_settings_writes_nothing(ee_root, lv2, monkeypatch):
 def test_fix_saves_surround_cuts_into_the_levels(ee_root, monkeypatch):
     from skitz_effects.check import Cut
     pipeline = make_pipeline(monkeypatch, layout="5.1")
-    levels = pipeline.controller.settings.surround_levels
-    levels["FC"] = 3.0
-    levels["RL"] = 2.1
+    pipeline.levels_owner = "a"
+    pipeline.levels = {"FC": 3.0, "RL": 2.1}
     pipeline.fix([Cut("surround", "surround", -3.0)], True)
+    levels = pipeline.controller.settings.output["device_surround_levels"]["a"]
+    assert pipeline.levels == levels
+    assert not pipeline.levels_unsaved
     assert "FC" not in levels
     assert levels["FL"] == -3.0
     assert levels["RL"] == -0.9
@@ -314,3 +321,88 @@ def test_the_mixer_switch_survives_a_missing_file(ee_root, lv2, monkeypatch):
     assert on_disk["output"]["blocklist"] == ["org.example.App"]
     assert on_disk["output"]["bass_loudness#0"]["output-gain"] == -3.0
     assert pipeline.unsaved
+
+
+def test_levels_are_live_until_saved(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.levels_owner = "a"
+    pipeline.set_surround_level("FC", -3.0)
+    assert pipeline.levels_unsaved
+    assert pipeline.saves == []
+    assert "unsaved-changed" in pipeline.emitted
+    saved = pipeline.controller.settings.output["device_surround_levels"]
+    assert saved == {}
+    pipeline.save_levels()
+    assert saved["a"]["FC"] == -3.0
+    assert not pipeline.levels_unsaved
+    assert pipeline.saves == [1]
+
+
+def test_editing_a_level_back_clears_the_mark(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.set_surround_level("FC", -3.0)
+    pipeline.set_surround_level("FC", 0.0)
+    assert not pipeline.levels_unsaved
+
+
+def test_discarding_levels_restores_the_saved_ones(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.controller.settings.output["device_surround_levels"]["a"] = {"FC": 2.0}
+    pipeline.levels_owner = "a"
+    pipeline.levels = {"FC": 2.0}
+    pipeline.set_surround_level("FC", -3.0)
+    pipeline.set_surround_level("RL", 1.0)
+    pipeline.discard_levels()
+    assert pipeline.levels == {"FC": 2.0}
+    assert not pipeline.levels_unsaved
+
+
+def test_input_has_no_levels(monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    pipeline.direction = "input"
+    pipeline.levels = {"FC": 1.0}
+    assert not pipeline.levels_unsaved
+    pipeline.save_levels()
+    pipeline.discard_levels()
+    assert pipeline.saves == []
+    assert pipeline.emitted == []
+
+
+def test_unedited_levels_follow_the_device(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    saved = pipeline.controller.settings.output["device_surround_levels"]
+    saved.update({"a": {"FC": 1.0}, "b": {"FC": -2.0}})
+    pipeline.controller.settings.output["device"] = "a"
+    pipeline.levels_owner = "a"
+    pipeline.levels = {"FC": 1.0}
+    pipeline.select_device("b")
+    assert pipeline.levels_owner == "b"
+    assert pipeline.levels == {"FC": -2.0}
+    assert pipeline.rebuilds
+
+
+def test_edited_levels_stay_with_their_owner(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    saved = pipeline.controller.settings.output["device_surround_levels"]
+    saved.update({"a": {"FC": 1.0}, "b": {"FC": -2.0}})
+    pipeline.controller.settings.output["device"] = "a"
+    pipeline.levels_owner = "a"
+    pipeline.levels = {"FC": 1.0}
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.select_device("b")
+    assert pipeline.levels_owner == "a"
+    assert pipeline.levels == {"FC": 4.0}
+    assert pipeline.levels_unsaved
+
+
+def test_a_profile_rename_carries_the_levels(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    state = pipeline.controller.settings.output
+    state.update({"device": "old", "device_channels": {}})
+    state["device_surround_levels"]["old"] = {"FC": 1.0}
+    pipeline.levels_owner = "old"
+    pipeline.levels = {"FC": 1.0}
+    pipeline._migrate("old", "new")
+    assert state["device_surround_levels"] == {"new": {"FC": 1.0}}
+    assert pipeline.levels_owner == "new"
+    assert not pipeline.levels_unsaved

@@ -161,6 +161,8 @@ class Pipeline(GObject.Object):
         self.trims = []
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
         self.saved = self._snapshot()
+        self.levels_owner = self.state["device"] if output else ""
+        self.levels = self._saved_levels()
         self.route = ""
         self._proc = None
         self._started = 0.0
@@ -215,6 +217,11 @@ class Pipeline(GObject.Object):
             if old in state[key]:
                 state[key][new] = state[key].pop(old)
         state["device_channels"].pop(new, None)
+        if self.direction == "output":
+            if old in state["device_surround_levels"]:
+                state["device_surround_levels"][new] = state["device_surround_levels"].pop(old)
+            if self.levels_owner == old:
+                self.levels_owner = new
         if state["device"] == old:
             state["device"] = new
         self.controller.settings.save()
@@ -351,6 +358,9 @@ class Pipeline(GObject.Object):
         rule = self.state["device_presets"].get(name)
         if rule and rule in presets.list_presets(self.direction):
             self.load_preset(rule)
+        if not self.levels_unsaved:
+            self.levels_owner = name
+            self.levels = self._saved_levels()
         self.controller.settings.save()
         self.emit("state-changed")
         self.queue_rebuild()
@@ -380,6 +390,32 @@ class Pipeline(GObject.Object):
         self.emit("preset-changed")
         self.emit("unsaved-changed")
         self.queue_rebuild()
+
+    def _saved_levels(self):
+        if self.direction != "output":
+            return {}
+        return dict(self.state["device_surround_levels"].get(self.levels_owner, {}))
+
+    @property
+    def levels_unsaved(self):
+        if self.direction != "output":
+            return False
+        live = {c: g for c, g in self.levels.items() if g}
+        return live != {c: g for c, g in self._saved_levels().items() if g}
+
+    def save_levels(self):
+        if self.direction != "output":
+            return
+        self.state["device_surround_levels"][self.levels_owner] = {c: g for c, g in self.levels.items() if g}
+        self.controller.settings.save()
+        self.emit("unsaved-changed")
+
+    def discard_levels(self):
+        if self.direction != "output":
+            return
+        self.levels = self._saved_levels()
+        self._apply_levels()
+        self.emit("unsaved-changed")
 
     def load_preset(self, name):
         self.trims = []
@@ -463,7 +499,7 @@ class Pipeline(GObject.Object):
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
         return route, graph.build(check.trimmed(self.preset, self.trims), enabled, route, s.layout, s.hrir,
-                                  device.name, check.trimmed_levels(s.layout, s.surround_levels, self.trims))
+                                  device.name, check.trimmed_levels(s.layout, self.levels, self.trims))
 
     def _check_rate(self):
         """Restarts the chain when its device changes rate under it.
@@ -571,19 +607,14 @@ class Pipeline(GObject.Object):
         all_cuts = self.trims + cuts
         surround = any(c.control == "surround" for c in all_cuts)
         s = self.controller.settings
-        levels = check.trimmed_levels(s.layout, s.surround_levels, all_cuts)
+        levels = check.trimmed_levels(s.layout, self.levels, all_cuts)
         if save:
             if self.preset:
                 check.fold(self.preset, all_cuts)
                 self.save_preset()
             if surround:
-                for channel, gain in levels.items():
-                    gain = round(gain, 6)
-                    if gain:
-                        s.surround_levels[channel] = gain
-                    else:
-                        s.surround_levels.pop(channel, None)
-                s.save()
+                self.levels = {c: round(g, 6) for c, g in levels.items() if round(g, 6)}
+                self.save_levels()
             self.trims = []
             self.emit("preset-changed")
         else:
@@ -606,17 +637,20 @@ class Pipeline(GObject.Object):
                 for tap, title, stream in self.steps() for key in [effect_ids.get(tap, tap)]]
 
     def set_surround_level(self, channel, gain):
-        s = self.controller.settings
         if gain:
-            s.surround_levels[channel] = gain
+            self.levels[channel] = gain
         else:
-            s.surround_levels.pop(channel, None)
-        s.save()
+            self.levels.pop(channel, None)
+        self._apply_levels()
+        self.emit("unsaved-changed")
+
+    def _apply_levels(self):
         if self.route != "hrir" or not self.chain_running:
             self.queue_rebuild()
             return
+        s = self.controller.settings
         # The HRIR is the chain's first step, so its controls sit on the chain's own capture node.
-        levels = check.trimmed_levels(s.layout, s.surround_levels, self.trims)
+        levels = check.trimmed_levels(s.layout, self.levels, self.trims)
         self.pw.set_controls(self.control_node, graph.level_controls(s.layout, levels))
         if self.device:
             self._conf = self._build(self.device)[1]

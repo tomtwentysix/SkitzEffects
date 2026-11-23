@@ -82,7 +82,7 @@ class SurroundGroup(Adw.PreferencesGroup):
         self._level_rows = []
         for ch in positions:
             adjustment = Gtk.Adjustment(lower=-12, upper=12, step_increment=0.5, page_increment=3,
-                                        value=settings.surround_levels.get(ch, 0))
+                                        value=self.controller.output.levels.get(ch, 0))
             row = Adw.SpinRow(title=CHANNEL_TITLES[ch], subtitle="dB", adjustment=adjustment, digits=1)
             row.connect("notify::value", lambda r, _, ch=ch: self.controller.output.set_surround_level(
                 ch, round(r.get_value(), 1)))
