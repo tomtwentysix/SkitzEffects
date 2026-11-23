@@ -78,8 +78,11 @@ class Preset:
     def save(self):
         self._write(self.data)
 
-    def save_blocklist(self, blocklist):
-        data = json.loads(self.path.read_text())
+    def save_blocklist(self, blocklist, fallback=None):
+        try:
+            data = json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            data = copy.deepcopy(fallback) if fallback else {}
         data.setdefault(self.section_name, {})["blocklist"] = list(blocklist)
         self._write(data)
 

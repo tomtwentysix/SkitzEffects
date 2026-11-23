@@ -319,8 +319,9 @@ class Pipeline(GObject.Object):
             blocklist.append(key)
         elif not on and key in blocklist:
             blocklist.remove(key)
-        self.preset.save_blocklist(blocklist)
-        self.saved.setdefault(self.preset.section_name, {})["blocklist"] = list(blocklist)
+        self.preset.save_blocklist(blocklist, self.saved)
+        if self.saved is not None:
+            self.saved.setdefault(self.preset.section_name, {})["blocklist"] = list(blocklist)
         self.emit("unsaved-changed")
         self._route_streams()
 
@@ -355,7 +356,12 @@ class Pipeline(GObject.Object):
         self.queue_rebuild()
 
     def _snapshot(self):
-        return copy.deepcopy(self.preset.data) if self.preset else None
+        if not self.preset:
+            return None
+        # settings() fills in missing defaults, which must not count as an edit.
+        for effect_id in self.preset.order:
+            self.preset.settings(effect_id)
+        return copy.deepcopy(self.preset.data)
 
     @property
     def unsaved(self):

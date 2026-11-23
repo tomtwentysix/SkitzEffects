@@ -290,3 +290,27 @@ def test_the_mixer_switch_saves_only_the_blocklist(ee_root, lv2, monkeypatch):
     pipeline.discard_preset()
     assert pipeline.preset.section["blocklist"] == ["org.example.App"]
     assert not pipeline.unsaved
+
+
+def test_a_preset_missing_defaults_is_not_unsaved(ee_root, lv2, monkeypatch):
+    path = ee_root / "output" / "Dali iO6.json"
+    data = json.loads(path.read_text())
+    del data["output"]["bass_loudness#0"]["output-gain"]
+    path.write_text(json.dumps(data))
+    pipeline = make_pipeline(monkeypatch)
+    for effect_id in pipeline.preset.order:
+        pipeline.preset.enabled(effect_id)
+        pipeline.preset.settings(effect_id)
+    assert not pipeline.unsaved
+
+
+def test_the_mixer_switch_survives_a_missing_file(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    monkeypatch.setattr(type(pipeline), "_route_streams", lambda self: None)
+    edit_gain(pipeline, -7.0)
+    pipeline.preset.path.unlink()
+    pipeline.set_blocked({"application.id": "org.example.App"}, True)
+    on_disk = json.loads(pipeline.preset.path.read_text())
+    assert on_disk["output"]["blocklist"] == ["org.example.App"]
+    assert on_disk["output"]["bass_loudness#0"]["output-gain"] == -3.0
+    assert pipeline.unsaved
