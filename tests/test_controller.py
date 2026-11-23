@@ -99,6 +99,11 @@ def make_pipeline(monkeypatch, preset="Dali iO6", layout="stereo"):
     return pipeline
 
 
+def presets_listed():
+    from skitz_effects import presets
+    return presets.list_presets()
+
+
 def test_stages_map_taps_back_to_effect_ids(ee_root, lv2, monkeypatch):
     pipeline = make_pipeline(monkeypatch)
     monkeypatch.setattr(type(pipeline), "steps", lambda self: [
@@ -404,10 +409,6 @@ def test_a_new_preset_from_unsaved_waits(ee_root, lv2, monkeypatch):
     assert "Fresh" not in presets_listed()
 
 
-def presets_listed():
-    from skitz_effects import presets
-    return presets.list_presets()
-
 
 def test_switching_when_saved_is_immediate(ee_root, lv2, monkeypatch):
     pipeline = make_pipeline(monkeypatch)
@@ -562,3 +563,60 @@ def test_a_second_device_change_replaces_the_pending_one(ee_root, lv2, monkeypat
     assert pipeline.pending.device == "c"
     assert pipeline.pending.preset == "Bass Boosted"
     assert pipeline.state["device"] == "c"
+
+
+def test_a_change_that_needs_no_answer_withdraws_the_pending_one(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop"})
+    edit_gain(pipeline, -7.0)
+    pipeline.select_device("b")
+    pipeline.emitted.clear()
+    pipeline.select_device("c")
+    assert pipeline.pending is None
+    assert "switch-pending" in pipeline.emitted
+
+
+def test_resolving_clears_with_a_signal(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.load_preset("Laptop")
+    pipeline.emitted.clear()
+    pipeline.resolve("cancel")
+    assert pipeline.emitted == ["switch-pending"]
+
+
+def test_save_without_a_pending_switch_still_saves(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.set_surround_level("FC", 4.0)
+    pipeline.resolve("save")
+    assert not pipeline.unsaved
+    assert not pipeline.levels_unsaved
+    assert pipeline.controller.settings.output["device_surround_levels"]["a"] == {"FC": 4.0}
+    assert pipeline.state["preset"] == "Dali iO6"
+
+
+def test_discard_without_a_pending_switch_does_nothing(ee_root, lv2, monkeypatch):
+    pipeline = make_pipeline(monkeypatch)
+    edit_gain(pipeline, -7.0)
+    pipeline.resolve("discard")
+    assert pipeline.unsaved
+
+
+def test_a_profile_rename_carries_the_pending_device(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop"})
+    edit_gain(pipeline, -7.0)
+    pipeline.select_device("b")
+    pipeline.state["device_channels"] = {}
+    pipeline._migrate("b", "b2")
+    assert pipeline.pending.device == "b2"
+
+
+def test_cancel_lets_unedited_levels_follow_the_device(ee_root, lv2, monkeypatch):
+    pipeline = device_pipeline(monkeypatch, {"b": "Laptop"})
+    edit_gain(pipeline, -7.0)
+    pipeline.select_device("b")
+    pipeline.resolve("cancel")
+    assert pipeline.levels_owner == "b"
+    assert pipeline.levels == {"FC": -2.0}
+    assert pipeline.state["preset"] == "Dali iO6"
+    assert pipeline.unsaved

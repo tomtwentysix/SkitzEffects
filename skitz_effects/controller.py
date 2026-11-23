@@ -232,6 +232,8 @@ class Pipeline(GObject.Object):
                 self.levels_owner = new
         if state["device"] == old:
             state["device"] = new
+        if self.pending and self.pending.device == old:
+            self.pending.device = new
         self.controller.settings.save()
         self.emit("state-changed")
 
@@ -374,6 +376,7 @@ class Pipeline(GObject.Object):
         else:
             if self.pending and self.pending.device is not None:
                 self.pending = None
+                self.emit("switch-pending")
             if rule and not self.unsaved:
                 self._switch_preset(rule, False)
             self._take_levels(name)
@@ -464,18 +467,27 @@ class Pipeline(GObject.Object):
 
     def resolve(self, choice):
         pending, self.pending = self.pending, None
-        if not pending or choice == "cancel":
+        if pending:
+            self.emit("switch-pending")
+        if choice == "cancel":
+            if pending and pending.device is not None:
+                self._take_levels(self.state["device"])
+                self.controller.settings.save()
+                self.emit("state-changed")
+                self.queue_rebuild()
             return
         if choice == "save":
             if self.unsaved:
                 self.save_preset()
             if self.levels_unsaved:
                 self.save_levels()
-        elif choice == "discard":
+        elif choice == "discard" and pending:
             if self.unsaved:
                 self.discard_preset()
             if self.levels_unsaved:
                 self.discard_levels()
+        if not pending:
+            return
         if pending.preset:
             self._switch_preset(pending.preset, pending.new)
         if pending.device is not None:
