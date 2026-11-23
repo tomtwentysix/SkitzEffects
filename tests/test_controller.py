@@ -129,7 +129,8 @@ def test_apply_cuts_changes_the_live_preset(ee_root, lv2, monkeypatch):
     assert pipeline.unsaved
     assert path.read_bytes() == before
     assert pipeline.saves == []
-    assert pipeline.emitted == ["unsaved-changed"]
+    assert "preset-changed" in pipeline.emitted
+    assert pipeline.emitted[-1] == "unsaved-changed"
 
 
 def test_apply_cuts_lowers_the_live_levels(ee_root, monkeypatch):
@@ -145,6 +146,7 @@ def test_apply_cuts_lowers_the_live_levels(ee_root, monkeypatch):
     assert pipeline.controller.settings.output["device_surround_levels"] == {}
     assert pipeline.saves == []
     assert "unsaved-changed" in pipeline.emitted
+    assert "preset-changed" not in pipeline.emitted
 
 
 def test_apply_cuts_ignores_effects_the_preset_lacks(ee_root, lv2, monkeypatch):

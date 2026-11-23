@@ -617,6 +617,8 @@ class Pipeline(GObject.Object):
             self.queue_rebuild()
         else:
             self._sync_conf()
+        if any(c.control != "surround" for c in cuts):
+            self.emit("preset-changed")
         self.emit("unsaved-changed")
 
     def stages(self):
