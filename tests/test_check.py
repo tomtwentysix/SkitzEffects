@@ -108,14 +108,6 @@ def test_a_carry_passes_through_a_stage_with_no_cut_target():
     assert left == 0
 
 
-def test_trimmed_leaves_the_preset_alone(ee_root):
-    p = presets.load("Dali iO6")
-    t = check.trimmed(p, [check.Cut("bass_loudness#0", "output-gain", -2.0)])
-    assert t.settings("bass_loudness#0")["output-gain"] == pytest.approx(-5.0)
-    assert p.settings("bass_loudness#0")["output-gain"] == -3.0
-    assert check.trimmed(None, [check.Cut("bass_loudness#0", "output-gain", -2.0)]) is None
-
-
 def test_fold_writes_into_the_preset(ee_root):
     p = presets.load("Dali iO6")
     check.fold(p, [check.Cut("bass_loudness#0", "output-gain", -2.0)])

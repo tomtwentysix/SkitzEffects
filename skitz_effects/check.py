@@ -88,14 +88,6 @@ def drop_flagged(stage, change, layout):
     return change < limit
 
 
-def trimmed(preset, cuts):
-    if preset is None:
-        return None
-    result = copy.deepcopy(preset)
-    fold(result, cuts)
-    return result
-
-
 def trimmed_levels(layout, levels, cuts):
     cut = sum(c.db for c in cuts if c.control == "surround")
     if not cut:
