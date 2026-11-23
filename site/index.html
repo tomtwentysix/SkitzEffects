@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skitz Effects</title>
+<meta name="description" content="Audio effects for PipeWire using Easy Effects presets, with 5.1 and 7.1 surround and binaural HRIR downmixing.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root {
+  --bg: #fafafb;
+  --surface: #ffffff;
+  --text: #241f31;
+  --muted: #5e5c64;
+  --line: #deddda;
+  --accent: #1c71d8;
+  --code-bg: #241f31;
+  --code-text: #f6f5f4;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d1b22;
+    --surface: #2a2730;
+    --text: #f6f5f4;
+    --muted: #c0bfbc;
+    --line: #3d3846;
+    --accent: #99c1f1;
+    --code-bg: #141218;
+    --code-text: #f6f5f4;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.6 "Inter", "Cantarell", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main, footer { max-width: 52rem; margin: 0 auto; padding: 0 1rem; }
+a { color: var(--accent); }
+header {
+  text-align: center;
+  padding: 4.5rem 1rem 3rem;
+}
+header img { width: 128px; height: 128px; }
+h1 { font-size: 2.6rem; margin: 1rem 0 .25rem; letter-spacing: -.02em; }
+.tagline { font-size: 1.2rem; color: var(--muted); max-width: 34rem; margin: 0 auto 1.75rem; }
+.actions { display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+.button {
+  display: inline-block;
+  padding: .6rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--surface);
+}
+.button.primary { background: #1c71d8; border-color: #1c71d8; color: #fff; }
+h2 { font-size: 1.5rem; margin: 3.5rem 0 1rem; letter-spacing: -.01em; }
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.feature {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+}
+.feature h3 { margin: 0 0 .35rem; font-size: 1.05rem; }
+.feature p { margin: 0; color: var(--muted); font-size: .95rem; }
+.command {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 10px;
+  padding: .7rem .7rem .7rem 1rem;
+  margin: .6rem 0;
+}
+.command code { flex: 1; min-width: 0; overflow-x: auto; font: .95rem/1.4 "JetBrains Mono", "Source Code Pro", ui-monospace, monospace; white-space: pre; }
+.command button {
+  flex: none;
+  font: inherit;
+  font-size: .8rem;
+  padding: .3rem .7rem;
+  border-radius: 6px;
+  border: 1px solid #5e5c64;
+  background: transparent;
+  color: var(--code-text);
+  cursor: pointer;
+}
+.note { color: var(--muted); font-size: .95rem; }
+footer {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  padding-bottom: 3rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: .9rem;
+}
+footer p { margin: .3rem 0; }
+@media (max-width: 30rem) {
+  header { padding-top: 3rem; }
+  h1 { font-size: 2.1rem; }
+}
+</style>
+</head>
+<body>
+<header>
+  <img src="icon.svg" alt="">
+  <h1>Skitz Effects</h1>
+  <p class="tagline">Easy Effects presets for everything you play and record, with 5.1 and 7.1 sound on any device.</p>
+  <div class="actions">
+    <a class="button primary" href="#install">Install on Fedora</a>
+    <a class="button" href="https://github.com/tomtwentysix/SkitzEffects">Source on GitHub</a>
+  </div>
+</header>
+
+<main>
+  <h2>What it does</h2>
+  <div class="features">
+    <div class="feature">
+      <h3>Your Easy Effects presets</h3>
+      <p>Load the presets you already have for playback and microphones. Changes are saved back in the same format, so Easy Effects still reads them.</p>
+    </div>
+    <div class="feature">
+      <h3>Presets per device</h3>
+      <p>Each output and input remembers its own preset and switches to it when you change device.</p>
+    </div>
+    <div class="feature">
+      <h3>Surround on any device</h3>
+      <p>5.1 and 7.1 input. Surround devices receive every channel, and stereo devices and headphones get a binaural downmix through a 14-channel HeSuVi HRIR.</p>
+    </div>
+    <div class="feature">
+      <h3>Distortion Check</h3>
+      <p>Play something typical, stop the check, and see which stages went over 0 dB. Skitz Effects can turn those stages down for you.</p>
+    </div>
+    <div class="feature">
+      <h3>Noise removal</h3>
+      <p>Deep Noise Remover cleans up your microphone with DeepFilterNet.</p>
+    </div>
+    <div class="feature">
+      <h3>Device names</h3>
+      <p>Rename devices system-wide from the Devices page, so every app shows the names you chose.</p>
+    </div>
+  </div>
+
+  <h2>How it works</h2>
+  <p>Skitz Effects does no audio processing of its own. PipeWire's filter-chain hosts the LSP and ZAM LV2 plugins that Easy Effects uses, and its convolver handles impulse responses and the HRIR. Skitz Effects builds the chain, keeps it in step with your devices and gives you a GTK&nbsp;4 interface to edit it.</p>
+
+  <h2 id="install">Install</h2>
+  <p>Skitz Effects is packaged for Fedora in <a href="https://copr.fedorainfracloud.org/coprs/solartw/skitz-effects/">COPR</a>. Updates then arrive with your other system updates.</p>
+  <div class="command"><code>sudo dnf copr enable solartw/skitz-effects</code><button type="button">Copy</button></div>
+  <div class="command"><code>sudo dnf install skitz-effects</code><button type="button">Copy</button></div>
+  <p class="note">The package pulls in PipeWire's filter-chain LV2 host and the LSP, ZAM and MDA plugins. Deep Noise Remover uses DeepFilterNet's LADSPA plugin, which comes from the same COPR.</p>
+
+  <h2>Not yet available</h2>
+  <p>Crossfeed needs the bs2b LV2 plugin, which Fedora does not package, and the Calf effects (Bass Enhancer, Exciter and others) are not mapped yet. Their settings stay in the preset.</p>
+</main>
+
+<footer>
+  <p>© 2026 SolarFlare Developments. Released under the <a href="https://github.com/tomtwentysix/SkitzEffects/blob/main/LICENSE">GPL-3.0-or-later</a>.</p>
+  <p>Skitz Effects is not affiliated with Easy Effects or its developers.</p>
+</footer>
+
+<script>
+for (const button of document.querySelectorAll(".command button")) {
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.previousElementSibling.textContent);
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Copy failed";
+    }
+    setTimeout(() => { button.textContent = "Copy"; }, 1500);
+  });
+}
+</script>
+</body>
+</html>
