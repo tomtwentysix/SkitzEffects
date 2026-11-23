@@ -406,3 +406,39 @@ def test_a_profile_rename_carries_the_levels(monkeypatch):
     assert state["device_surround_levels"] == {"new": {"FC": 1.0}}
     assert pipeline.levels_owner == "new"
     assert not pipeline.levels_unsaved
+
+
+def test_levels_without_a_device_cannot_be_saved(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.set_surround_level("FC", -3.0)
+    pipeline.save_levels()
+    assert pipeline.controller.settings.output["device_surround_levels"] == {}
+    assert pipeline.saves == []
+
+
+def test_choosing_a_first_device_keeps_live_edits_as_its_own(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.controller.settings.output["device_surround_levels"]["a"] = {"FC": 1.0}
+    pipeline.set_surround_level("FC", -3.0)
+    pipeline.select_device("a")
+    assert pipeline.levels_owner == "a"
+    assert pipeline.levels == {"FC": -3.0}
+    assert pipeline.levels_unsaved
+
+
+def test_choosing_a_first_device_loads_its_levels_when_unedited(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.controller.settings.output["device_surround_levels"]["a"] = {"FC": 1.0}
+    pipeline.select_device("a")
+    assert pipeline.levels_owner == "a"
+    assert pipeline.levels == {"FC": 1.0}
+    assert not pipeline.levels_unsaved
+
+
+def test_levels_of_another_layout_are_not_an_edit(monkeypatch):
+    pipeline = make_pipeline(monkeypatch, layout="5.1")
+    pipeline.levels_owner = "a"
+    pipeline.levels = {"SL": 2.0}
+    assert not pipeline.levels_unsaved
+    pipeline.controller.settings.layout = "7.1"
+    assert pipeline.levels_unsaved

@@ -361,6 +361,8 @@ class Pipeline(GObject.Object):
         if not self.levels_unsaved:
             self.levels_owner = name
             self.levels = self._saved_levels()
+        elif not self.levels_owner:
+            self.levels_owner = name
         self.controller.settings.save()
         self.emit("state-changed")
         self.queue_rebuild()
@@ -400,11 +402,12 @@ class Pipeline(GObject.Object):
     def levels_unsaved(self):
         if self.direction != "output":
             return False
-        live = {c: g for c, g in self.levels.items() if g}
-        return live != {c: g for c, g in self._saved_levels().items() if g}
+        channels = LAYOUTS[self.controller.settings.layout]
+        live = {c: g for c, g in self.levels.items() if g and c in channels}
+        return live != {c: g for c, g in self._saved_levels().items() if g and c in channels}
 
     def save_levels(self):
-        if self.direction != "output":
+        if self.direction != "output" or not self.levels_owner:
             return
         self.state["device_surround_levels"][self.levels_owner] = {c: g for c, g in self.levels.items() if g}
         self.controller.settings.save()

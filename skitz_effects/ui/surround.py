@@ -57,8 +57,11 @@ class SurroundGroup(Adw.PreferencesGroup):
         self.levels_row = Adw.ExpanderRow(title="Channel Levels", subtitle="Applied before the HRIR")
         self.add(self.levels_row)
         self._level_rows = []
+        self._showing_levels = False
         self._fill_levels()
 
+        controller.output.connect("state-changed", lambda *_: self._show_levels())
+        controller.output.connect("unsaved-changed", lambda *_: self._show_levels())
         controller.output.connect("state-changed", lambda *_: self.refresh())
         controller.output.connect("preset-changed", lambda *_: self._fill_levels())
         controller.connect("devices-changed", lambda *_: self.refresh())
@@ -84,11 +87,23 @@ class SurroundGroup(Adw.PreferencesGroup):
             adjustment = Gtk.Adjustment(lower=-12, upper=12, step_increment=0.5, page_increment=3,
                                         value=self.controller.output.levels.get(ch, 0))
             row = Adw.SpinRow(title=CHANNEL_TITLES[ch], subtitle="dB", adjustment=adjustment, digits=1)
-            row.connect("notify::value", lambda r, _, ch=ch: self.controller.output.set_surround_level(
-                ch, round(r.get_value(), 1)))
+            row.connect("notify::value", lambda r, _, ch=ch: self._on_level(ch, r))
+            row.channel = ch
             self.levels_row.add_row(row)
             self._level_rows.append(row)
         self.levels_row.set_visible(bool(positions))
+
+    def _on_level(self, channel, row):
+        if not self._showing_levels:
+            self.controller.output.set_surround_level(channel, round(row.get_value(), 1))
+
+    def _show_levels(self):
+        levels = self.controller.output.levels
+        self._showing_levels = True
+        for row in self._level_rows:
+            if row.get_value() != levels.get(row.channel, 0):
+                row.set_value(levels.get(row.channel, 0))
+        self._showing_levels = False
 
     def refresh(self):
         sink = self.controller.output.device
