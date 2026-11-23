@@ -13,7 +13,7 @@ def test_cut_targets():
     assert check.cut_target("maximizer")[:2] == ("ceiling", -20.0)
     assert check.cut_target("autogain")[:2] == ("target", -60.0)
     assert check.cut_target("surround") == ("surround", -12.0, 0.5)
-    assert check.cut_target("reverb") is None
+    assert check.cut_target("pitch") is None
 
 
 def test_each_over_is_cut_by_its_peak_plus_margin_minus_earlier_cuts():

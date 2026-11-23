@@ -121,9 +121,12 @@ def test_ports_are_unique_per_effect():
 def test_availability_follows_installed_bundles(lv2):
     assert plugins.effect("bass_loudness").available()
     assert plugins.effect("convolver").available()
-    assert not plugins.effect("exciter").available()
+    assert plugins.effect("crossfeed").available()
+    assert not plugins.effect("pitch").available()
     shutil.rmtree(lv2 / "mda.lv2")
+    shutil.rmtree(lv2 / "calf.lv2")
     assert not plugins.effect("bass_loudness").available()
+    assert not plugins.effect("exciter").available()
     assert plugins.effect("no_such_thing").missing == "Unknown effect"
 
 

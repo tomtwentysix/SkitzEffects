@@ -97,10 +97,10 @@ def test_effects_off_or_missing_leave_a_plain_copy(ee_root, lv2):
     off = chain_args(graph.build(presets.load("Dali iO6"), False, "passthrough", "stereo", HRIR, TARGET))
     assert node_names(off) == {"in_l", "in_r", "out_0", "out_1"}
     assert off["filter.graph"]["outputs"] == ["out_0:Out", "out_1:Out"]
-    # Easy Effects 6 preset: Calf and bs2b effects have no plugin, and the IR is not installed.
+    # Easy Effects 6 preset whose IR is not installed.
     old = graph.build(presets.load("Bass Boosted"), True, "passthrough", "stereo", HRIR, TARGET)
     assert {n.get("plugin") for n in chain_nodes(old).values()} == {
-        None, plugins.EFFECTS["equalizer"].uri, plugins.EFFECTS["maximizer"].uri}
+        None, *(plugins.EFFECTS[k].uri for k in ("equalizer", "maximizer", "bass_enhancer"))}
     for args in chain_modules(old):
         assert_wired(args)
 
@@ -335,3 +335,70 @@ def test_surround_levels_set_each_channels_gain_before_the_hrir(ee_root, lv2):
 def test_the_hrir_downmix_passes_each_channel_at_its_own_level(ee_root, lv2):
     assert graph.level_controls("5.1", {})["in_FL:Mult"] == 1.0
     assert graph.level_controls("7.1", {"SL": -6.0})["in_SL:Mult"] == pytest.approx(10 ** (-6 / 20))
+
+
+def run_bq(coefficients, signal):
+    c = coefficients
+    out, x1, y1 = [], 0.0, 0.0
+    for x in signal:
+        y = (c["b0"] * x + c["b1"] * x1 - c["a1"] * y1) / c["a0"]
+        out.append(y)
+        x1, y1 = x, y
+    return out
+
+
+def test_crossfeed_matches_libbs2b():
+    import ctypes
+    import ctypes.util
+    name = ctypes.util.find_library("bs2b")
+    if not name:
+        pytest.skip("libbs2b is not installed")
+    lib = ctypes.CDLL(name)
+    lib.bs2b_open.restype = ctypes.c_void_p
+    handle = ctypes.c_void_p(lib.bs2b_open())
+    lib.bs2b_set_srate(handle, 48000)
+    lib.bs2b_set_level_fcut(handle, 650)
+    lib.bs2b_set_level_feed(handle, 95)
+    n = 64
+    # Interleaved stereo with an impulse on the left only.
+    samples = (ctypes.c_double * (2 * n))(*([1.0, 0.0] + [0.0] * (2 * n - 2)))
+    lib.bs2b_cross_feed_d(handle, samples, n)
+    lib.bs2b_close(handle)
+    lowpass, highboost, gain = graph.bs2b(650, 9.5, 48000)
+    impulse = [1.0] + [0.0] * (n - 1)
+    assert samples[0::2] == pytest.approx([gain * v for v in run_bq(highboost, impulse)], abs=1e-9)
+    assert samples[1::2] == pytest.approx([gain * v for v in run_bq(lowpass, impulse)], abs=1e-9)
+
+
+def test_crossfeed_feeds_each_side_into_the_other(ee_root, lv2):
+    preset = presets.load("Bass Boosted")
+    nodes = chain_nodes(graph.build(preset, True, "passthrough", "stereo", HRIR, TARGET))
+    assert nodes["crossfeed_lo_l"]["label"] == "bq_raw"
+    rates = [c["rate"] for c in nodes["crossfeed_lo_l"]["config"]["coefficients"]]
+    assert 44100 in rates and 48000 in rates
+    links = [(link["output"], link["input"]) for args in chain_modules(
+        graph.build(preset, True, "passthrough", "stereo", HRIR, TARGET)) for link in args["filter.graph"]["links"]]
+    assert ("crossfeed_lo_r:Out", "crossfeed_l:In 2") in links
+    assert ("crossfeed_hi_l:Out", "crossfeed_l:In 1") in links
+    assert graph.live_controls("crossfeed", plugins.effect("crossfeed"), preset.settings("crossfeed")) is None
+
+
+def test_stereo_tools_mixes_dry_and_wet_around_the_plugin(lv2):
+    effect = plugins.effect("stereo_tools")
+    settings = {"dry": -100.0, "wet": -6.0, "mode": "LR > MS (Stereo to Mid-Side)", "slev": 6.0}
+    g = graph.Graph()
+    left, right = graph.add_effect(g, "stereo_tools#0", effect, settings, "in_l:Out", "in_r:Out")
+    nodes = {n["name"]: n for n in g.nodes}
+    assert nodes["stereo_tools_0"]["control"]["mode"] == 1.0
+    assert nodes["stereo_tools_0"]["control"]["slev"] == pytest.approx(graph.db(6))
+    assert "dry" not in nodes["stereo_tools_0"]["control"]
+    assert nodes["stereo_tools_0_mix_l"]["control"] == {"Gain 1": pytest.approx(graph.db(-6)), "Gain 2": 0.0}
+    live = graph.live_controls("stereo_tools#0", effect, {**settings, "dry": 0.0})
+    assert live["stereo_tools_0_mix_r:Gain 2"] == 1.0
+    assert left == "stereo_tools_0_out_l:Out"
+
+
+def test_calf_enums_take_easy_effects_names_or_indices():
+    reverb = plugins.effect("reverb")
+    assert reverb.controls({"room-size": "Tunnel-like"})["room_size"] == 3.0
+    assert reverb.controls({"room-size": 4})["room_size"] == 4.0

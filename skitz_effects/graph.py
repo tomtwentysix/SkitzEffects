@@ -15,6 +15,7 @@ of one graph to itself.
 """
 
 import json
+import math
 import re
 from pathlib import Path
 
@@ -80,8 +81,11 @@ class Graph:
     def inlet(self, name, mult=1.0):
         return self.add(type="builtin", label="linear", name=name, control={"Mult": mult, "Add": DENORMAL_GUARD})
 
-    def mixer(self, name, sources):
-        self.add(type="builtin", label="mixer", name=name)
+    def mixer(self, name, sources, gains=None):
+        node = {"type": "builtin", "label": "mixer", "name": name}
+        if gains:
+            node["control"] = {f"Gain {i}": g for i, g in enumerate(gains, 1)}
+        self.add(**node)
         for i, src in enumerate(sources, 1):
             self.link(src, f"{name}:In {i}")
         return f"{name}:Out"
@@ -102,9 +106,55 @@ def resolve_ir(settings):
     return presets.list_irs().get(name)
 
 
+# bq_raw picks the coefficients whose rate is nearest the graph's.
+RATES = (44100, 48000, 88200, 96000, 176400, 192000)
+
+
+def bs2b(fcut, feed, rate):
+    """libbs2b's crossfeed as (lowpass, highboost, gain).
+
+    The lowpass feeds each channel into the other and the highboost shapes the channel itself, each a
+    first-order filter given as bq_raw coefficients; gain brings the sum back to unity at DC.
+    """
+    fcut = min(max(fcut, 300), 2000)
+    feed = min(max(feed, 1), 15)
+    gb_lo = feed * -5 / 6 - 3
+    gb_hi = feed / 6 - 3
+    g_lo = 10 ** (gb_lo / 20)
+    g_hi = 1 - 10 ** (gb_hi / 20)
+    fc_hi = fcut * 2 ** ((gb_lo - 20 * math.log10(g_hi)) / 12)
+    x = math.exp(-2 * math.pi * fcut / rate)
+    lowpass = {"b0": g_lo * (1 - x), "b1": 0.0, "b2": 0.0, "a0": 1.0, "a1": -x, "a2": 0.0}
+    x = math.exp(-2 * math.pi * fc_hi / rate)
+    highboost = {"b0": 1 - g_hi * (1 - x), "b1": -x, "b2": 0.0, "a0": 1.0, "a1": -x, "a2": 0.0}
+    return lowpass, highboost, 1 / (1 - g_hi + g_lo)
+
+
+def crossfeed(graph, name, settings, left, right):
+    fcut, feed = float(settings.get("fcut", 700)), float(settings.get("feed", 4.5))
+    filters = [bs2b(fcut, feed, rate) for rate in RATES]
+    gain = filters[0][2] * db(settings.get("input-gain", 0) + settings.get("output-gain", 0))
+    for side, src in (("l", left), ("r", right)):
+        for kind, index in (("lo", 0), ("hi", 1)):
+            coefficients = [{"rate": rate, **f[index]} for rate, f in zip(RATES, filters)]
+            graph.add(type="builtin", label="bq_raw", name=f"{name}_{kind}_{side}",
+                      config={"coefficients": coefficients})
+            graph.link(src, f"{name}_{kind}_{side}:In")
+    return (graph.mixer(f"{name}_l", [f"{name}_hi_l:Out", f"{name}_lo_r:Out"], [gain, gain]),
+            graph.mixer(f"{name}_r", [f"{name}_hi_r:Out", f"{name}_lo_l:Out"], [gain, gain]))
+
+
+def dry_wet(settings):
+    # Easy Effects silences either side at its lowest setting.
+    return [0.0 if settings.get(key, default) <= -100 else db(settings.get(key, default))
+            for key, default in (("wet", 0.0), ("dry", -100.0))]
+
+
 def add_effect(graph, effect_id, effect, settings, left, right):
     """Wires one effect after the (left, right) outputs; returns its outputs."""
     name = node_name(effect_id)
+    if effect.kind == "crossfeed":
+        return crossfeed(graph, name, settings, left, right)
     if effect.kind == "convolver":
         path = resolve_ir(settings)
         if not path:
@@ -129,7 +179,12 @@ def add_effect(graph, effect_id, effect, settings, left, right):
         graph.add(type="lv2", plugin=effect.uri, name=name, control=effect.controls(settings))
     graph.link(left, f"{name}:{in_l}")
     graph.link(right, f"{name}:{in_r}")
-    left, right = f"{name}:{out_l}", f"{name}:{out_r}"
+    if effect.dry_wet:
+        mix = dry_wet(settings)
+        left = graph.mixer(f"{name}_mix_l", [f"{name}:{out_l}", left], mix)
+        right = graph.mixer(f"{name}_mix_r", [f"{name}:{out_r}", right], mix)
+    else:
+        left, right = f"{name}:{out_l}", f"{name}:{out_r}"
     if effect.gain_nodes:
         left, right = gain_stage(graph, f"{name}_out", settings.get("output-gain", 0), left, right)
     return left, right
@@ -337,10 +392,15 @@ def build_input(preset, enabled, device, channel="", positions=()):
 
 def live_controls(effect_id, effect, settings):
     """Control updates for a running chain, keyed "node:port" as filter-chain expects."""
-    if effect.kind == "convolver":
+    # Their settings are in node configs, which only a rebuild changes.
+    if effect.kind in ("convolver", "crossfeed"):
         return None
     name = node_name(effect_id)
     controls = {f"{name}:{port}": value for port, value in effect.controls(settings).items()}
+    if effect.dry_wet:
+        for side in "lr":
+            for i, gain in enumerate(dry_wet(settings), 1):
+                controls[f"{name}_mix_{side}:Gain {i}"] = gain
     if effect.gain_nodes:
         for stage, key in (("in", "input-gain"), ("out", "output-gain")):
             for side in "lr":

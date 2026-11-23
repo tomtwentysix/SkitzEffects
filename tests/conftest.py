@@ -24,7 +24,7 @@ def ee_root(tmp_path, monkeypatch):
 def lv2(tmp_path, monkeypatch):
     """Makes every packaged plugin look installed, whatever the test machine has."""
     lib = tmp_path / "lv2"
-    for bundle in ("lsp-plugins.lv2", "ZaMaximX2.lv2", "mda.lv2"):
+    for bundle in ("lsp-plugins.lv2", "ZaMaximX2.lv2", "mda.lv2", "calf.lv2"):
         (lib / bundle).mkdir(parents=True)
         write_manifest(lib / bundle, [e.uri for e in plugins.EFFECTS.values() if e.bundle == bundle])
     ladspa = tmp_path / "ladspa"

@@ -145,22 +145,23 @@ footer p { margin: .3rem 0; }
       <p>Deep Noise Remover cleans up your microphone with DeepFilterNet.</p>
     </div>
     <div class="feature">
+      <h3>Crossfeed for headphones</h3>
+      <p>Feeds a little of each channel into the other, as speakers reach both ears, so hard-panned stereo is easier on headphones.</p>
+    </div>
+    <div class="feature">
       <h3>Device names</h3>
       <p>Rename devices system-wide from the Devices page, so every app shows the names you chose.</p>
     </div>
   </div>
 
   <h2>How it works</h2>
-  <p>Skitz Effects does no audio processing of its own. PipeWire's filter-chain hosts the LSP and ZAM LV2 plugins, and its convolver handles impulse responses and the HRIR. Skitz Effects builds the chain, keeps it in step with your devices and gives you a GTK&nbsp;4 interface to edit it.</p>
+  <p>Skitz Effects does no audio processing of its own. PipeWire's filter-chain hosts the LSP, ZAM, MDA and Calf LV2 plugins, its convolver handles impulse responses and the HRIR, and its biquad filters run Crossfeed. Skitz Effects builds the chain, keeps it in step with your devices and gives you a GTK&nbsp;4 interface to edit it.</p>
 
   <h2 id="install">Install</h2>
   <p>Skitz Effects is packaged for Fedora in <a href="https://copr.fedorainfracloud.org/coprs/solartw/skitz-effects/">COPR</a>. Updates then arrive with your other system updates.</p>
   <div class="command"><code>sudo dnf copr enable solartw/skitz-effects</code><button type="button">Copy</button></div>
   <div class="command"><code>sudo dnf install skitz-effects</code><button type="button">Copy</button></div>
-  <p class="note">The package pulls in PipeWire's filter-chain LV2 host and the LSP, ZAM and MDA plugins. Deep Noise Remover uses DeepFilterNet's LADSPA plugin, which comes from the same COPR.</p>
-
-  <h2>Not yet available</h2>
-  <p>Crossfeed needs the bs2b LV2 plugin, which Fedora does not package, and the Calf effects (Bass Enhancer, Exciter and others) are not mapped yet. Their settings stay in the preset.</p>
+  <p class="note">The package pulls in PipeWire's filter-chain LV2 host and the LSP, ZAM and MDA plugins. Bass Enhancer, Exciter, Stereo Tools, Reverberation and Deesser use the Calf plugins, and Deep Noise Remover uses DeepFilterNet's LADSPA plugin from the same COPR. Both are installed by default and can be removed.</p>
 </main>
 
 <footer>

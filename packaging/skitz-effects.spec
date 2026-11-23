@@ -23,6 +23,7 @@ Requires:       lsp-plugins-lv2
 Requires:       lv2-zam-plugins
 Requires:       lv2-mdala-plugins
 Recommends:     ladspa-deepfilternet
+Recommends:     lv2-calf-plugins
 
 %description
 Skitz Effects applies Easy Effects presets to everything you play and record,

@@ -40,6 +40,7 @@ def _read(path, _mtime):
 
 LSP = "http://lsp-plug.in/plugins/lv2/"
 LSP_PORTS = ("in_l", "in_r", "out_l", "out_r")
+CALF = "http://calf.sourceforge.net/plugins/"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,8 @@ class Param:
         if self.kind == "bool":
             return 1.0 if value else 0.0
         if self.kind == "enum":
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < len(self.options):
+                return float(value)
             value = ALIASES.get(value, value)
             return float(self.options.index(value)) if value in self.options else None
         return float(value)
@@ -80,6 +83,8 @@ class Effect:
     ladspa: str = ""
     # The plugin has no gain ports, so the graph puts builtin gain nodes around it.
     gain_nodes: bool = False
+    # The "dry" and "wet" settings are mixed by the graph around the plugin, as Easy Effects does.
+    dry_wet: bool = False
     missing: str = ""
     custom: Callable | None = field(default=None, compare=False)
 
@@ -224,6 +229,38 @@ def equalizer_params():
                 Param(b + "q", f"q{s}_{i}"),
             ]
     return tuple(params)
+
+
+def gain_params():
+    return (
+        Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
+        Param("output-gain", "", label="Output gain", lo=-36, hi=36, step=0.1, unit="dB"),
+    )
+
+
+def calf(kind, title, plugin, params, **extra):
+    # Easy Effects applies the gains outside Calf's plugins, and binds the rest to their ports.
+    return Effect(kind, title, CALF + plugin, "calf.lv2", "lv2-calf-plugins", gain_nodes=True,
+                  params=gain_params() + params, **extra)
+
+
+def harmonics(scope_lo, scope_hi, limit, limit_port, limit_lo, limit_hi):
+    limit_label = "Floor" if limit == "floor" else "Ceiling"
+    return (
+        Param("amount", "amount", "db", label="Amount", lo=-100, hi=36, step=0.1, unit="dB"),
+        Param("harmonics", "drive", label="Harmonics", lo=0.1, hi=10, step=0.1),
+        Param("scope", "freq", label="Scope", lo=scope_lo, hi=scope_hi, unit="Hz", digits=0),
+        Param(f"{limit}-active", f"{limit_port}_active", "bool", label=f"{limit_label} filter"),
+        Param(limit, limit_port, label=limit_label, lo=limit_lo, hi=limit_hi, unit="Hz", digits=0),
+        Param("blend", "blend", label="Blend", lo=-10, hi=10, step=0.1),
+        Param("listen", "listen", "bool"),
+    )
+
+
+STEREO_MODES = ("LR > LR (Stereo Default)", "LR > MS (Stereo to Mid-Side)", "MS > LR (Mid-Side to Stereo)",
+                "LR > LL (Mono Left Channel)", "LR > RR (Mono Right Channel)", "LR > L+R (Mono Sum L+R)",
+                "LR > RL (Stereo Flip Channels)")
+ROOM_SIZES = ("Small", "Medium", "Large", "Tunnel-like", "Large/smooth", "Experimental")
 
 
 def multiband_params():
@@ -422,23 +459,73 @@ EFFECTS = {
                       digits=3),
             ),
         ),
+        Effect("convolver", "Convolver", builtin=True, ports=(), params=gain_params()),
+        # bs2b's filters, built from PipeWire's own biquads by graph.crossfeed.
         Effect(
-            "convolver", "Convolver", builtin=True, ports=(),
-            params=(
-                Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
-                Param("output-gain", "", label="Output gain", lo=-36, hi=36, step=0.1, unit="dB"),
+            "crossfeed", "Crossfeed", builtin=True, ports=(),
+            params=gain_params() + (
+                Param("fcut", "", label="Cutoff", lo=300, hi=2000, unit="Hz", digits=0),
+                Param("feed", "", label="Feed", lo=1, hi=15, step=0.1, unit="dB"),
+            ),
+        ),
+        calf("bass_enhancer", "Bass Enhancer", "BassEnhancer", harmonics(10, 250, "floor", "floor", 10, 120)),
+        calf("exciter", "Exciter", "Exciter", harmonics(2000, 12000, "ceil", "ceil", 10000, 20000)),
+        calf(
+            "stereo_tools", "Stereo Tools", "StereoTools", dry_wet=True, params=(
+                Param("mode", "mode", "enum", STEREO_MODES, "Mode"),
+                Param("balance-in", "balance_in", label="Input balance", lo=-1, hi=1, step=0.01, digits=2),
+                Param("balance-out", "balance_out", label="Output balance", lo=-1, hi=1, step=0.01, digits=2),
+                Param("slev", "slev", "db", label="Side level", lo=-36, hi=36, step=0.1, unit="dB"),
+                Param("sbal", "sbal", label="Side balance", lo=-1, hi=1, step=0.01, digits=2),
+                Param("mlev", "mlev", "db", label="Middle level", lo=-36, hi=36, step=0.1, unit="dB"),
+                Param("mpan", "mpan", label="Middle pan", lo=-1, hi=1, step=0.01, digits=2),
+                Param("stereo-base", "stereo_base", label="Stereo base", lo=-1, hi=1, step=0.01, digits=2),
+                Param("delay", "delay", label="Delay", lo=-20, hi=20, step=0.1, unit="ms"),
+                Param("sc-level", "sc_level", label="Stereo phase level", lo=1, hi=100, step=0.1),
+                Param("stereo-phase", "stereo_phase", label="Stereo phase", hi=360, unit="°", digits=0),
+                Param("softclip", "softclip", "bool", label="Soft clip"),
+                Param("mutel", "mutel", "bool", label="Mute left"),
+                Param("muter", "muter", "bool", label="Mute right"),
+                Param("phasel", "phasel", "bool", label="Invert left phase"),
+                Param("phaser", "phaser", "bool", label="Invert right phase"),
+                Param("dry", "", label="Dry", lo=-100, hi=20, step=0.1, unit="dB"),
+                Param("wet", "", label="Wet", lo=-100, hi=20, step=0.1, unit="dB"),
+            ),
+        ),
+        calf(
+            "reverb", "Reverberation", "Reverb", (
+                Param("room-size", "room_size", "enum", ROOM_SIZES, "Room size"),
+                Param("decay-time", "decay_time", label="Decay time", lo=0.4, hi=15, step=0.1, unit="s"),
+                Param("hf-damp", "hf_damp", label="High frequency damping", lo=2000, hi=20000, unit="Hz",
+                      digits=0),
+                Param("diffusion", "diffusion", label="Diffusion", hi=1, step=0.01, digits=2),
+                Param("amount", "amount", "db", label="Amount", lo=-100, hi=6, step=0.1, unit="dB"),
+                Param("dry", "dry", "db", label="Dry", lo=-100, hi=6, step=0.1, unit="dB"),
+                Param("predelay", "predelay", label="Pre-delay", hi=500, step=0.1, unit="ms"),
+                Param("bass-cut", "bass_cut", label="Bass cut", lo=20, hi=20000, unit="Hz", digits=0),
+                Param("treble-cut", "treble_cut", label="Treble cut", lo=20, hi=20000, unit="Hz", digits=0),
+            ),
+        ),
+        calf(
+            "deesser", "Deesser", "Deesser", (
+                Param("mode", "mode", "enum", ("Wide", "Split"), "Mode"),
+                Param("detection", "detection", "enum", ("RMS", "Peak"), "Detection"),
+                Param("threshold", "threshold", "db", label="Threshold", lo=-60, hi=0, step=0.1, unit="dB"),
+                Param("ratio", "ratio", label="Ratio", lo=1, hi=20, step=0.1),
+                Param("laxity", "laxity", label="Laxity", lo=1, hi=100, digits=0),
+                Param("makeup", "makeup", "db", label="Makeup", hi=36, step=0.1, unit="dB"),
+                Param("f1-freq", "f1_freq", label="Split frequency", lo=10, hi=18000, unit="Hz", digits=0),
+                Param("f1-level", "f1_level", "db", label="Split gain", lo=-24, hi=24, step=0.1, unit="dB"),
+                Param("f2-freq", "f2_freq", label="Peak frequency", lo=10, hi=18000, unit="Hz", digits=0),
+                Param("f2-level", "f2_level", "db", label="Peak gain", lo=-24, hi=24, step=0.1, unit="dB"),
+                Param("f2-q", "f2_q", label="Peak Q", lo=0.1, hi=100, step=0.1),
+                Param("sc-listen", "sc_listen", "bool"),
             ),
         ),
     )
 }
 
 for _kind, _title, _missing in (
-    ("bass_enhancer", "Bass Enhancer", "Not supported yet"),
-    ("exciter", "Exciter", "Not supported yet"),
-    ("stereo_tools", "Stereo Tools", "Not supported yet"),
-    ("reverb", "Reverberation", "Not supported yet"),
-    ("deesser", "Deesser", "Not supported yet"),
-    ("crossfeed", "Crossfeed", "Fedora packages no bs2b plugin for this effect"),
     ("crystalizer", "Crystalizer", "This effect is built into Easy Effects and has no plugin"),
     ("delay", "Delay", "Not supported yet"),
     ("filter", "Filter", "Not supported yet"),

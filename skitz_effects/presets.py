@@ -251,6 +251,20 @@ DEFAULTS = {
                       "max-erb-processing-threshold": 30.0, "max-df-processing-threshold": 20.0,
                       "min-processing-buffer": 0, "post-filter-beta": 0.02},
     "convolver": {**_gains(), "kernel-name": "", "ir-width": 100, "autogain": True, "dry": -100.0, "wet": 0.0},
+    "crossfeed": {**_gains(), "fcut": 700, "feed": 4.5},
+    "bass_enhancer": {**_gains(), "amount": 0.0, "harmonics": 8.5, "scope": 100.0, "floor": 20.0, "blend": 0.0,
+                      "floor-active": False, "listen": False},
+    "exciter": {**_gains(), "amount": 0.0, "harmonics": 8.5, "scope": 7500.0, "ceil": 16000.0, "blend": 0.0,
+                "ceil-active": False, "listen": False},
+    "stereo_tools": {**_gains(), "balance-in": 0.0, "balance-out": 0.0, "softclip": False, "mutel": False,
+                     "muter": False, "phasel": False, "phaser": False, "mode": "LR > LR (Stereo Default)",
+                     "slev": 0.0, "sbal": 0.0, "mlev": 0.0, "mpan": 0.0, "stereo-base": 0.0, "delay": 0.0,
+                     "sc-level": 1.0, "stereo-phase": 0.0, "dry": -100.0, "wet": 0.0},
+    "reverb": {**_gains(), "room-size": "Large", "decay-time": 1.5, "hf-damp": 5000.0, "diffusion": 0.5,
+               "amount": -12.0, "dry": 0.0, "predelay": 0.0, "bass-cut": 300.0, "treble-cut": 5000.0},
+    "deesser": {**_gains(), "detection": "RMS", "mode": "Wide", "threshold": -18.0, "ratio": 3.0, "laxity": 15,
+                "makeup": 0.0, "f1-freq": 6000.0, "f2-freq": 4500.0, "f1-level": 0.0, "f2-level": 12.0,
+                "f2-q": 1.0, "sc-listen": False},
 }
 
 
