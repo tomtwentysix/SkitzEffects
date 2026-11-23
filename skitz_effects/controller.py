@@ -1,11 +1,13 @@
 """Keeps the virtual devices, the filter-chain processes and the loaded presets in step with PipeWire."""
 
+import copy
 import ctypes
 import os
 import resource
 import signal
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from gi.repository import Gio, GLib, GObject
@@ -133,12 +135,21 @@ def _start_chain():
     resource.setrlimit(resource.RLIMIT_RTTIME, (RT_TIME_LIMIT, RT_TIME_LIMIT))
 
 
+@dataclass
+class Pending:
+    preset: str | None
+    new: bool
+    device: str | None
+
+
 class Pipeline(GObject.Object):
     """One direction: output (apps -> sink -> effects -> speakers) or input (mic -> effects -> source -> apps)."""
 
     __gsignals__ = {
         "preset-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "state-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "unsaved-changed": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "switch-pending": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self, controller, direction):
@@ -155,9 +166,11 @@ class Pipeline(GObject.Object):
         self.playback_node = graph.PLAYBACK if output else graph.MIC_PLAYBACK
         # The steps of the running chain, which the controller links one into the next.
         self._taps = []
-        # Session-only cuts from the distortion check; they are applied to every build but never saved.
-        self.trims = []
         self.preset = presets.load(self.state["preset"], direction) if self.state["preset"] else None
+        self.saved = self._snapshot()
+        self.levels_owner = self.state["device"] if output else ""
+        self.levels = self._saved_levels()
+        self.pending = None
         self.route = ""
         self._proc = None
         self._started = 0.0
@@ -167,7 +180,6 @@ class Pipeline(GObject.Object):
         self._rate = 0
         self._rate_restart_id = 0
         self._conf = ""
-        self._save_id = 0
         self._rebuild_id = 0
 
     @property
@@ -213,8 +225,15 @@ class Pipeline(GObject.Object):
             if old in state[key]:
                 state[key][new] = state[key].pop(old)
         state["device_channels"].pop(new, None)
+        if self.direction == "output":
+            if old in state["device_surround_levels"]:
+                state["device_surround_levels"][new] = state["device_surround_levels"].pop(old)
+            if self.levels_owner == old:
+                self.levels_owner = new
         if state["device"] == old:
             state["device"] = new
+        if self.pending and self.pending.device == old:
+            self.pending.device = new
         self.controller.settings.save()
         self.emit("state-changed")
 
@@ -317,7 +336,10 @@ class Pipeline(GObject.Object):
             blocklist.append(key)
         elif not on and key in blocklist:
             blocklist.remove(key)
-        self._queue_save()
+        self.preset.save_blocklist(blocklist, self.saved)
+        if self.saved is not None:
+            self.saved.setdefault(self.preset.section_name, {})["blocklist"] = list(blocklist)
+        self.emit("unsaved-changed")
         self._route_streams()
 
     def choose_device(self, name):
@@ -344,29 +366,149 @@ class Pipeline(GObject.Object):
         if device:
             self.state["device_names"][name] = self.display_name(device)
         rule = self.state["device_presets"].get(name)
-        if rule and rule in presets.list_presets(self.direction):
-            self.load_preset(rule)
+        if rule not in presets.list_presets(self.direction):
+            rule = None
+        edited_preset = self.unsaved and rule != self.state["preset"]
+        edited_levels = self.levels_unsaved and bool(self.levels_owner) and name != self.levels_owner
+        if (rule and edited_preset) or edited_levels:
+            replaces = rule if rule != self.state["preset"] else None
+            self.pending = Pending(replaces, False, name)
+            self.emit("switch-pending")
+        else:
+            if self.pending and self.pending.device is not None:
+                self.pending = None
+                self.emit("switch-pending")
+            if rule and not self.unsaved:
+                self._switch_preset(rule, False)
+            self._take_levels(name)
         self.controller.settings.save()
         self.emit("state-changed")
         self.queue_rebuild()
 
+    def _take_levels(self, name):
+        if not self.levels_unsaved:
+            self.levels_owner = name
+            self.levels = self._saved_levels()
+        elif not self.levels_owner:
+            self.levels_owner = name
+
+    def _snapshot(self):
+        if not self.preset:
+            return None
+        # settings() fills in missing defaults, which must not count as an edit.
+        for effect_id in self.preset.order:
+            self.preset.settings(effect_id)
+        return copy.deepcopy(self.preset.data)
+
+    @property
+    def unsaved(self):
+        return bool(self.preset) and self.preset.data != self.saved
+
+    def save_preset(self):
+        if self.preset:
+            self.preset.save()
+            self.saved = self._snapshot()
+        self.emit("unsaved-changed")
+
+    def discard_preset(self):
+        if self.preset:
+            self.preset.data.clear()
+            self.preset.data.update(copy.deepcopy(self.saved))
+        self.emit("preset-changed")
+        self.emit("unsaved-changed")
+        self.queue_rebuild()
+
+    def _saved_levels(self):
+        if self.direction != "output":
+            return {}
+        return dict(self.state["device_surround_levels"].get(self.levels_owner, {}))
+
+    @property
+    def levels_unsaved(self):
+        if self.direction != "output":
+            return False
+        return {c: g for c, g in self.levels.items() if g} != {c: g for c, g in self._saved_levels().items() if g}
+
+    def save_levels(self):
+        if self.direction != "output" or not self.levels_owner:
+            return
+        self.state["device_surround_levels"][self.levels_owner] = {c: g for c, g in self.levels.items() if g}
+        self.controller.settings.save()
+        self.emit("unsaved-changed")
+
+    def discard_levels(self):
+        if self.direction != "output":
+            return
+        self.levels = self._saved_levels()
+        self._apply_levels()
+        self.emit("unsaved-changed")
+
     def load_preset(self, name):
-        self._flush_save()
-        self.trims = []
-        self.preset = presets.load(name, self.direction)
+        self._ask_or_switch(name, False)
+
+    def new_preset(self, name):
+        self._ask_or_switch(name, True)
+
+    def _ask_or_switch(self, name, new):
+        if self.unsaved:
+            self.pending = Pending(name, new, None)
+            self.emit("switch-pending")
+        else:
+            self._switch_preset(name, new)
+
+    def _switch_preset(self, name, new):
+        self.preset = presets.create(name, self.direction) if new else presets.load(name, self.direction)
+        self.saved = self._snapshot()
         self.state["preset"] = name if self.preset else ""
         self.controller.settings.save()
         self.emit("preset-changed")
         self.queue_rebuild()
 
-    def new_preset(self, name):
-        self._flush_save()
-        self.trims = []
-        self.preset = presets.create(name, self.direction)
-        self.state["preset"] = name
-        self.controller.settings.save()
-        self.emit("preset-changed")
-        self.queue_rebuild()
+    def _replaced_by(self, pending):
+        preset = bool(pending.preset) and self.unsaved
+        levels = pending.device is not None and pending.device != self.levels_owner and self.levels_unsaved
+        return preset, levels
+
+    @property
+    def preset_replaced(self):
+        return bool(self.pending) and self._replaced_by(self.pending)[0]
+
+    @property
+    def levels_replaced(self):
+        return bool(self.pending) and self._replaced_by(self.pending)[1]
+
+    def resolve(self, choice):
+        pending, self.pending = self.pending, None
+        preset, levels = self._replaced_by(pending) if pending else (self.unsaved, self.levels_unsaved)
+        if pending:
+            self.emit("switch-pending")
+        if choice == "cancel":
+            if pending and pending.device is not None:
+                self._take_levels(self.state["device"])
+                self.controller.settings.save()
+                self.emit("state-changed")
+                self.queue_rebuild()
+            return
+        if choice == "save":
+            if preset:
+                self.save_preset()
+            if levels:
+                self.save_levels()
+        elif choice == "discard" and pending:
+            if preset:
+                self.discard_preset()
+            if levels:
+                self.discard_levels()
+        if not pending:
+            return
+        if pending.preset:
+            self._switch_preset(pending.preset, pending.new)
+        if pending.device is not None:
+            self._take_levels(pending.device)
+            self.controller.settings.save()
+            self.emit("state-changed")
+            self.queue_rebuild()
+        self.emit("unsaved-changed")
 
     def set_enabled(self, on):
         self.state["enabled"] = on
@@ -427,12 +569,12 @@ class Pipeline(GObject.Object):
                 # ALSA's left and right mono profiles keep the unused input as AUX1, which would
                 # otherwise reach the effects' right side.
                 channel = "MONO"
-            return "stereo", graph.build_input(check.trimmed(self.preset, self.trims), enabled, device.name, channel,
+            return "stereo", graph.build_input(self.preset, enabled, device.name, channel,
                                                device.positions)
         s = self.controller.settings
         route = graph.choose_route(len(LAYOUTS[s.layout]), device.channels, s.downmix, self.controller.hrir_ok())
-        return route, graph.build(check.trimmed(self.preset, self.trims), enabled, route, s.layout, s.hrir,
-                                  device.name, check.trimmed_levels(s.layout, s.surround_levels, self.trims))
+        return route, graph.build(self.preset, enabled, route, s.layout, s.hrir,
+                                  device.name, self.levels)
 
     def _check_rate(self):
         """Restarts the chain when its device changes rate under it.
@@ -506,10 +648,8 @@ class Pipeline(GObject.Object):
         return self._proc is not None and self._proc.returncode is None
 
     def changed(self, effect_id, structural=False):
-        """Called after the UI edits the preset; saves it and applies the change."""
-        self._queue_save()
-        if structural and self.preset:
-            self.trims = [t for t in self.trims if t.key == "surround" or t.key in self.preset.order]
+        """Called after the UI edits the preset; applies the change without saving it."""
+        self.emit("unsaved-changed")
         if structural or not self.preset:
             self.queue_rebuild()
             return
@@ -520,12 +660,11 @@ class Pipeline(GObject.Object):
 
     def _send_live(self, effect_id):
         """Sends an effect's values to the running chain; False when only a rebuild can apply them."""
-        preset = check.trimmed(self.preset, self.trims)
         controls = graph.live_controls(effect_id, plugins.effect(presets.kind_of(effect_id)),
-                                       preset.settings(effect_id))
+                                       self.preset.settings(effect_id))
         if controls is None:
             return False
-        if preset.enabled(effect_id) and self.pw and self.chain_running:
+        if self.preset.enabled(effect_id) and self.pw and self.chain_running:
             node = graph.control_node(self._taps, self.control_node, self.playback_node, effect_id)
             self.pw.set_controls(node, controls)
         return True
@@ -535,39 +674,29 @@ class Pipeline(GObject.Object):
         if self.device:
             self._conf = self._build(self.device)[1]
 
-    def fix(self, cuts, save):
+    def apply_cuts(self, cuts):
         cuts = [c for c in cuts if c.key == "surround" or (self.preset and c.key in self.preset.order)]
-        all_cuts = self.trims + cuts
-        surround = any(c.control == "surround" for c in all_cuts)
         s = self.controller.settings
-        levels = check.trimmed_levels(s.layout, s.surround_levels, all_cuts)
-        if save:
-            if self.preset:
-                check.fold(self.preset, all_cuts)
-                self._queue_save()
-            if surround:
-                for channel, gain in levels.items():
-                    gain = round(gain, 6)
-                    if gain:
-                        s.surround_levels[channel] = gain
-                    else:
-                        s.surround_levels.pop(channel, None)
-                s.save()
-            self.trims = []
-            self.emit("preset-changed")
-        else:
-            self.trims = all_cuts
-        live = self.pw and self.chain_running
+        if self.preset:
+            check.fold(self.preset, cuts)
+        surround = any(c.control == "surround" for c in cuts)
+        if surround:
+            levels = check.trimmed_levels(s.layout, self.levels, cuts)
+            trimmed = {c: round(g, 6) for c, g in levels.items()}
+            self.levels = {c: g for c, g in {**self.levels, **trimmed}.items() if g}
         rebuild = False
         for cut in cuts:
             if cut.control != "surround":
                 rebuild |= not self._send_live(cut.key)
-            elif live and self.route == "hrir":
-                self.pw.set_controls(self.control_node, graph.level_controls(s.layout, levels))
+        if surround:
+            self._apply_levels()
         if rebuild:
             self.queue_rebuild()
         else:
             self._sync_conf()
+        if any(c.control != "surround" for c in cuts):
+            self.emit("preset-changed")
+        self.emit("unsaved-changed")
 
     def stages(self):
         effect_ids = {graph.node_name(effect_id): effect_id for effect_id in self.preset.order} if self.preset else {}
@@ -575,46 +704,30 @@ class Pipeline(GObject.Object):
                 for tap, title, stream in self.steps() for key in [effect_ids.get(tap, tap)]]
 
     def set_surround_level(self, channel, gain):
-        s = self.controller.settings
         if gain:
-            s.surround_levels[channel] = gain
+            self.levels[channel] = gain
         else:
-            s.surround_levels.pop(channel, None)
-        s.save()
+            self.levels.pop(channel, None)
+        self._apply_levels()
+        self.emit("unsaved-changed")
+
+    def _apply_levels(self):
         if self.route != "hrir" or not self.chain_running:
             self.queue_rebuild()
             return
+        s = self.controller.settings
         # The HRIR is the chain's first step, so its controls sit on the chain's own capture node.
-        levels = check.trimmed_levels(s.layout, s.surround_levels, self.trims)
-        self.pw.set_controls(self.control_node, graph.level_controls(s.layout, levels))
+        self.pw.set_controls(self.control_node, graph.level_controls(s.layout, self.levels))
         if self.device:
             self._conf = self._build(self.device)[1]
 
     def shutdown(self):
-        self._flush_save()
         self._stop_chain()
         self._route_streams()
         if self.direction == "output" and self.state["device"]:
             # Hand the default back to the device, or WirePlumber picks one of its own.
             self.pw.set_default(self.state["device"])
         self.pw.destroy(self.virtual)
-
-    def _queue_save(self):
-        if self._save_id:
-            GLib.source_remove(self._save_id)
-        self._save_id = GLib.timeout_add(500, self._on_save_timeout)
-
-    def _on_save_timeout(self):
-        self._save_id = 0
-        return self._flush_save()
-
-    def _flush_save(self):
-        if self._save_id:
-            GLib.source_remove(self._save_id)
-            self._save_id = 0
-        if self.preset:
-            self.preset.save()
-        return False
 
 
 class Controller(GObject.Object):

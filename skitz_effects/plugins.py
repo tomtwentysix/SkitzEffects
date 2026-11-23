@@ -396,7 +396,8 @@ EFFECTS = {
                 Param("input-gain", "", label="Input gain", lo=-36, hi=36, step=0.1, unit="dB"),
                 Param("output-gain", "", label="Output gain", lo=-36, hi=36, step=0.1, unit="dB"),
                 Param("loudness", "loudness", "db", label="Loudness", lo=-60, hi=0, step=0.1, unit="dB"),
-                Param("output", "output", "db", label="Output", lo=-60, hi=0, step=0.1, unit="dB"),
+                # Above -6 dB the plugin's output gain rises steeply, to +60 dB at 0 dB.
+                Param("output", "output", "db", label="Output", lo=-60, hi=-3, step=0.1, unit="dB"),
             ),
             custom=bass_loudness_controls,
         ),

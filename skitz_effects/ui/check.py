@@ -151,9 +151,7 @@ class CheckDialog(Adw.Dialog):
 
         pipeline = self.pipeline
         settings = pipeline.controller.settings
-        trimmed = check.trimmed(pipeline.preset, pipeline.trims)
-        levels = check.trimmed_levels(settings.layout, settings.surround_levels, pipeline.trims)
-        room = check.room(trimmed, check_.stages, settings.layout, levels)
+        room = check.room(pipeline.preset, check_.stages, settings.layout, pipeline.levels)
         self.cuts, leftover = check.plan_cuts(check_.stages, check_.readings, room)
         planned = {cut.key: cut for cut in self.cuts}
 
@@ -180,13 +178,20 @@ class CheckDialog(Adw.Dialog):
         if self.cuts:
             self._watch = [self.pipeline.connect(name, self._on_pipeline_changed)
                            for name in ("state-changed", "preset-changed")]
-            self._set_buttons(("Fix Settings", lambda: self._fix(False), True),
-                              ("Fix and Save Preset", lambda: self._fix(True)), ("Cancel", self.close))
+            self._set_buttons(("Apply", lambda: self._apply(self.close), True),
+                              ("Apply and Run Again", lambda: self._apply(self._run)),
+                              ("Apply and Save", lambda: self._apply(self.close, save=True)),
+                              ("Cancel", self.close))
         else:
             self._set_buttons(("Run Again", self._run, True), ("Close", self.close))
 
-    def _fix(self, save):
+    def _apply(self, then, save=False):
         self._unwatch()
-        self.pipeline.fix(self.cuts, save)
-        self.summary.set_description("The settings have been lowered. Run the check again to confirm.")
-        self._set_buttons(("Run Again", self._run, True), ("Close", self.close))
+        pipeline = self.pipeline
+        cuts = self.cuts
+        pipeline.apply_cuts(cuts)
+        if save:
+            pipeline.save_preset()
+            if any(c.control == "surround" for c in cuts):
+                pipeline.save_levels()
+        then()

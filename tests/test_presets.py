@@ -136,3 +136,14 @@ def test_importing_an_ir_copies_it_into_the_shared_folder(ee_root, tmp_path):
     presets.import_ir(source, replace=True)
     assert dest.read_bytes() == b"two"
     assert presets.import_ir(dest) == dest
+
+
+def test_save_blocklist_writes_only_the_blocklist(ee_root):
+    preset = presets.load("Perfect EQ")
+    saved = json.loads(preset.path.read_text())
+    preset.order.clear()
+    preset.save_blocklist(["firefox"])
+    on_disk = json.loads(preset.path.read_text())
+    assert on_disk["output"]["blocklist"] == ["firefox"]
+    on_disk["output"]["blocklist"] = saved["output"]["blocklist"]
+    assert on_disk == saved

@@ -2,10 +2,10 @@ from pathlib import Path
 
 from gi.repository import Adw, Gtk
 
-from .. import presets
+from .. import plugins, presets
 from ..config import LAYOUTS as CHANNELS
 from .irs import import_ir
-from .rows import full_names
+from .rows import SliderRow, full_names
 
 LAYOUTS = (("stereo", "Stereo"), ("5.1", "5.1 Surround"), ("7.1", "7.1 Surround"))
 DOWNMIX = (("auto", "When the device needs it"), ("always", "Always"), ("never", "Never"))
@@ -14,6 +14,7 @@ ROUTES = {
     "hrir": "Downmixed to stereo through the HRIR",
     "stereo": "Mixed down to stereo without an HRIR",
 }
+LEVEL = plugins.Param("level", "", lo=-12, hi=12, step=0.5, digits=1, unit="dB")
 CHANNEL_TITLES = {"FL": "Front Left", "FR": "Front Right", "FC": "Centre", "LFE": "Subwoofer",
                   "RL": "Rear Left", "RR": "Rear Right", "SL": "Side Left", "SR": "Side Right"}
 
@@ -35,6 +36,10 @@ class SurroundGroup(Adw.PreferencesGroup):
                                                        "file.")
         self.controller = controller
         settings = controller.settings
+        self.save_button = Gtk.Button(icon_name="skitz-save-symbolic", css_classes=["flat"], valign=Gtk.Align.CENTER,
+                                      tooltip_text="Save Channel Levels")
+        self.save_button.connect("clicked", lambda _b: controller.output.save_levels())
+        self.set_header_suffix(self.save_button)
         self.route_row = Adw.ActionRow(title="Route")
         self.add(self.route_row)
         self.layout_row = Adw.ComboRow(title="Channels", subtitle="Apps see Skitz Effects as a speaker with this many",
@@ -57,8 +62,11 @@ class SurroundGroup(Adw.PreferencesGroup):
         self.levels_row = Adw.ExpanderRow(title="Channel Levels", subtitle="Applied before the HRIR")
         self.add(self.levels_row)
         self._level_rows = []
+        self._showing_levels = False
         self._fill_levels()
 
+        controller.output.connect("state-changed", lambda *_: self._show_levels())
+        controller.output.connect("unsaved-changed", lambda *_: (self._show_levels(), self._sync_save()))
         controller.output.connect("state-changed", lambda *_: self.refresh())
         controller.output.connect("preset-changed", lambda *_: self._fill_levels())
         controller.connect("devices-changed", lambda *_: self.refresh())
@@ -81,16 +89,30 @@ class SurroundGroup(Adw.PreferencesGroup):
         positions = CHANNELS[settings.layout] if settings.layout != "stereo" else ()
         self._level_rows = []
         for ch in positions:
-            adjustment = Gtk.Adjustment(lower=-12, upper=12, step_increment=0.5, page_increment=3,
-                                        value=settings.surround_levels.get(ch, 0))
-            row = Adw.SpinRow(title=CHANNEL_TITLES[ch], subtitle="dB", adjustment=adjustment, digits=1)
-            row.connect("notify::value", lambda r, _, ch=ch: self.controller.output.set_surround_level(
-                ch, round(r.get_value(), 1)))
+            row = SliderRow(CHANNEL_TITLES[ch], LEVEL, self.controller.output.levels.get(ch, 0))
+            row.connect("value-changed", lambda r, ch=ch: self._on_level(ch, r))
+            row.channel = ch
             self.levels_row.add_row(row)
             self._level_rows.append(row)
         self.levels_row.set_visible(bool(positions))
 
+    def _on_level(self, channel, row):
+        if not self._showing_levels:
+            self.controller.output.set_surround_level(channel, round(row.get_value(), 1))
+
+    def _show_levels(self):
+        levels = self.controller.output.levels
+        self._showing_levels = True
+        for row in self._level_rows:
+            if row.get_value() != levels.get(row.channel, 0):
+                row.set_value(levels.get(row.channel, 0))
+        self._showing_levels = False
+
+    def _sync_save(self):
+        self.save_button.set_sensitive(bool(self.controller.output.levels_owner) and self.controller.output.levels_unsaved)
+
     def refresh(self):
+        self._sync_save()
         sink = self.controller.output.device
         route = ROUTES.get(self.controller.output.route, "Not running")
         if sink:

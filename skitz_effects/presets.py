@@ -49,7 +49,8 @@ class Preset:
         return self.section["plugins_order"]
 
     def settings(self, effect_id):
-        return fill_defaults(self.section.setdefault(effect_id, {}), DEFAULTS.get(kind_of(effect_id), {}))
+        settings = fill_defaults(self.section.setdefault(effect_id, {}), DEFAULTS.get(kind_of(effect_id), {}))
+        return fill_bands(settings) if kind_of(effect_id) == "equalizer" else settings
 
     def enabled(self, effect_id):
         return not self.settings(effect_id).get("bypass", False)
@@ -76,9 +77,20 @@ class Preset:
         self.order.insert(j, self.order.pop(i))
 
     def save(self):
+        self._write(self.data)
+
+    def save_blocklist(self, blocklist, fallback=None):
+        try:
+            data = json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            data = copy.deepcopy(fallback) if fallback else {}
+        data.setdefault(self.section_name, {})["blocklist"] = list(blocklist)
+        self._write(data)
+
+    def _write(self, data):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.data, indent=4))
+        tmp.write_text(json.dumps(data, indent=4))
         tmp.replace(self.path)
 
 
@@ -240,6 +252,21 @@ DEFAULTS = {
                       "min-processing-buffer": 0, "post-filter-beta": 0.02},
     "convolver": {**_gains(), "kernel-name": "", "ir-width": 100, "autogain": True, "dry": -100.0, "wet": 0.0},
 }
+
+
+def band_default(i):
+    return copy.deepcopy(DEFAULTS["equalizer"]["left"].get(f"band{i}") or {
+        "frequency": 1000.0, "gain": 0.0, "type": "Bell", "q": 1.504760237537245, "mode": "RLC (BT)",
+        "slope": "x1", "mute": False, "solo": False, "width": 4.0})
+
+
+def fill_bands(settings):
+    """Adds the equaliser bands up to num-bands that a preset lacks, as the equaliser page would on drawing them."""
+    for side in ("left", "right"):
+        bands = settings.setdefault(side, {})
+        for i in range(int(settings.get("num-bands", 10))):
+            bands.setdefault(f"band{i}", band_default(i))
+    return settings
 
 
 def fill_defaults(settings, defaults):

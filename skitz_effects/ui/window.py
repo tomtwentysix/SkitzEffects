@@ -8,6 +8,7 @@ from .effects import EffectsView
 from .mixer import MixerPage
 from .rows import menu_row
 from .statusbar import StatusBar
+from .unsaved import unsaved_pipelines
 
 
 class SkitzEffectsWindow(Adw.ApplicationWindow):
@@ -72,8 +73,16 @@ class SkitzEffectsWindow(Adw.ApplicationWindow):
         # on another workspace or covered, such as by a fullscreen game.
         for signal in ("map", "unmap", "notify::suspended"):
             self.connect(signal, lambda *_: self._update_meters())
+        self.connect("close-request", self._on_close_request)
         self._on_page_changed()
         self._update_banner()
+
+    def _on_close_request(self, _window):
+        app = self.get_application()
+        if app.settings.run_in_background or app.quitting or not unsaved_pipelines(self.controller.pipelines):
+            return False
+        app.request_quit()
+        return True
 
     def _update_meters(self):
         if self.get_mapped() and not self.is_suspended():

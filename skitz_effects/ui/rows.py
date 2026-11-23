@@ -1,6 +1,6 @@
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GObject, Gtk
 
-from .. import plugins
+from .. import plugins, sliders
 
 # Easy Effects' own wording for values that LSP labels differently.
 DISPLAY = {new: old for old, new in plugins.ALIASES.items()}
@@ -54,7 +54,14 @@ def set_path(settings, key, value):
     settings[last] = value
 
 
-def param_row(param, settings, on_change, title=None):
+def param_row(param, settings, on_change, title=None, tooltip=""):
+    row = _param_row(param, settings, on_change, title)
+    if tooltip:
+        row.set_tooltip_text(tooltip)
+    return row
+
+
+def _param_row(param, settings, on_change, title=None):
     value = plugins.lookup(settings, param.key)
     title = title or param.label
 
@@ -74,22 +81,61 @@ def param_row(param, settings, on_change, title=None):
             row.set_selected(labels.index(current))
         row.connect("notify::selected", lambda r, _: changed(labels[r.get_selected()]))
         return row
-    return spin_row(title, param, value, changed)
+    return slider_row(title, param, value, changed)
 
 
-def spin_row(title, param, value, changed):
-    value = param.lo if value is None else min(max(float(value), param.lo), param.hi)
-    adjustment = Gtk.Adjustment(lower=param.lo, upper=param.hi, step_increment=param.step,
-                                page_increment=param.step * 10, value=value)
-    row = Adw.SpinRow(title=title, adjustment=adjustment, digits=param.digits, subtitle=param.unit)
-    row.connect("notify::value", lambda r, _: changed(round(r.get_value(), max(param.digits, 2))))
+class SliderRow(Adw.ActionRow):
+    __gsignals__ = {"value-changed": (GObject.SignalFlags.RUN_FIRST, None, ())}
+
+    def __init__(self, title, param, value):
+        super().__init__(title=title, subtitle=param.unit)
+        self.param = param
+        self._value = param.lo
+        self._syncing = False
+        self.scale = Gtk.Scale(adjustment=Gtk.Adjustment(lower=0, upper=1, step_increment=0.005, page_increment=0.05),
+                               draw_value=False, hexpand=True, width_request=220, valign=Gtk.Align.CENTER)
+        self.scale.connect("value-changed", self._on_scale)
+        self.entry = Gtk.Entry(width_chars=7, max_width_chars=9, xalign=1, valign=Gtk.Align.CENTER,
+                               input_purpose=Gtk.InputPurpose.NUMBER)
+        self.entry.connect("activate", lambda _e: self._on_entry())
+        focus = Gtk.EventControllerFocus()
+        focus.connect("leave", lambda _c: self._on_entry())
+        self.entry.add_controller(focus)
+        self.add_suffix(self.scale)
+        self.add_suffix(self.entry)
+        self.set_value(param.lo if value is None else value)
+
+    def get_value(self):
+        return self._value
+
+    def set_value(self, value):
+        self._value = min(max(float(value), self.param.lo), self.param.hi)
+        self._syncing = True
+        self.scale.set_value(sliders.position(self.param, self._value))
+        self.entry.set_text(f"{self._value:.{self.param.digits}f}")
+        self._syncing = False
+
+    def _changed(self, value):
+        if value != self._value:
+            self.set_value(value)
+            self.emit("value-changed")
+        else:
+            self.set_value(value)
+
+    def _on_scale(self, scale):
+        if not self._syncing:
+            self._changed(sliders.value_at(self.param, scale.get_value()))
+
+    def _on_entry(self):
+        try:
+            value = float(self.entry.get_text().replace(",", "."))
+        except ValueError:
+            self.set_value(self._value)
+            return
+        self._changed(min(max(value, self.param.lo), self.param.hi))
+
+
+def slider_row(title, param, value, changed):
+    row = SliderRow(title, param, value)
+    row.connect("value-changed", lambda r: changed(round(r.get_value(), max(param.digits, 2))))
     return row
-
-
-def spin_button(param, value, changed):
-    value = param.lo if value is None else min(max(float(value), param.lo), param.hi)
-    adjustment = Gtk.Adjustment(lower=param.lo, upper=param.hi, step_increment=param.step,
-                                page_increment=param.step * 10, value=value)
-    button = Gtk.SpinButton(adjustment=adjustment, digits=param.digits, valign=Gtk.Align.CENTER)
-    button.connect("value-changed", lambda b: changed(round(b.get_value(), max(param.digits, 2))))
-    return button

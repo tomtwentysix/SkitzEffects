@@ -55,6 +55,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/applications/uk.co.solarflareit.SkitzEffects.desktop
 %{_datadir}/icons/hicolor/scalable/apps/uk.co.solarflareit.SkitzEffects.svg
 %{_datadir}/icons/hicolor/symbolic/apps/uk.co.solarflareit.SkitzEffects-symbolic.svg
+%{_datadir}/icons/hicolor/scalable/actions/skitz-save-symbolic.svg
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog

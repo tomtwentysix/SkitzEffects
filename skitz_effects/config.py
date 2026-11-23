@@ -37,6 +37,12 @@ def side():
             "device_channels": {}}
 
 
+def output_side():
+    # device_surround_levels maps an output device's node.name to its surround levels, gain in dB per
+    # channel before the HRIR, such as {"FC": 3.0}.
+    return {**side(), "device_surround_levels": {}}
+
+
 def meter():
     # tap is "before", "after", or the step of the chain it follows, such as "equalizer_0" or "surround".
     return {"layout": "stereo", "tap": "after"}
@@ -45,14 +51,12 @@ def meter():
 @dataclass
 class Settings:
     setup_done: bool = False
-    output: dict = field(default_factory=side)
+    output: dict = field(default_factory=output_side)
     input: dict = field(default_factory=side)
     layout: str = "7.1"
     # "auto" downmixes with the HRIR only when the device has fewer channels than the layout.
     downmix: str = "auto"
     hrir: str = ""
-    # Gain in dB per channel before the HRIR, such as {"FC": 3.0}.
-    surround_levels: dict = field(default_factory=dict)
     run_in_background: bool = True
     # Only applies to the launch at login.
     start_minimised: bool = True
@@ -75,7 +79,10 @@ def load():
         return Settings()
     known = {f.name for f in fields(Settings)}
     settings = Settings(**{k: v for k, v in data.items() if k in known})
-    for direction in ("output", "input"):
-        setattr(settings, direction, {**side(), **getattr(settings, direction)})
+    settings.output = {**output_side(), **settings.output}
+    settings.input = {**side(), **settings.input}
+    old_levels = data.get("surround_levels")
+    if old_levels and settings.output["device"]:
+        settings.output["device_surround_levels"].setdefault(settings.output["device"], old_levels)
     settings.meters = {d: {**meter(), **settings.meters.get(d, {})} for d in ("output", "input")}
     return settings

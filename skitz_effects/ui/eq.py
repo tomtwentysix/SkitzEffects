@@ -5,7 +5,7 @@ import math
 import numpy as np
 from gi.repository import Adw, Gtk
 
-from .. import levels, plugins, presets
+from .. import levels, plugins, presets, tooltips
 from .analyser import accent, draw_grid, x_of
 from .rows import param_row, set_path
 
@@ -120,10 +120,7 @@ class EqualizerEditor(Gtk.Box):
 
     def band(self, i, side=None):
         bands = self.settings.setdefault(side or self.side, {})
-        default = presets.DEFAULTS["equalizer"]["left"].get(f"band{i}") or {
-            "frequency": 1000.0, "gain": 0.0, "type": "Bell", "q": 1.504760237537245, "mode": "RLC (BT)",
-            "slope": "x1", "mute": False, "solo": False, "width": 4.0}
-        return bands.setdefault(f"band{i}", dict(default))
+        return bands.setdefault(f"band{i}", presets.band_default(i))
 
     def changed(self):
         self.on_change()
@@ -148,7 +145,7 @@ class EqualizerEditor(Gtk.Box):
             nav.append(button)
         self.band_group.set_header_suffix(nav)
         for param in BAND_PARAMS:
-            row = param_row(param, band, self.changed)
+            row = param_row(param, band, self.changed, tooltip=tooltips.text("equalizer_band", param.key))
             self._band_rows.append(row)
             self.band_group.add(row)
 
