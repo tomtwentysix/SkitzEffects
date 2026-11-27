@@ -1,5 +1,5 @@
 Name:           skitz-effects
-Version:        1.1.0
+Version:        1.1.1
 Release:        1%{?dist}
 Summary:        Audio effects with surround sound and HRIR downmixing
 License:        GPL-3.0-or-later
@@ -60,6 +60,13 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/uk.co.solarflareit.Sk
 %{_datadir}/dnf5/repos.override.d/50-skitz-effects.repo
 
 %changelog
+* Fri Nov 27 2026 Tom <tom@solarflareit.co.uk> - 1.1.1-1
+- Audio no longer stops when the output device drops out for a moment, for example on a USB
+  reconnect: the effects chain now notices that its last step lost the device and restarts. Until
+  now only toggling the effects brought the sound back.
+- Bass Enhancer, Exciter, Stereo Tools, Reverberation and Deesser run on the Calf plugins, which the
+  package now recommends, and Crossfeed works without any plugin.
+
 * Mon Nov 23 2026 Tom <tom@solarflareit.co.uk> - 1.1.0-1
 - A Distortion Check on the Effects page listens to every stage of the chain while audio plays, logs
   where the signal goes over 0 dB and where the level drops sharply, then offers to lower each stage
