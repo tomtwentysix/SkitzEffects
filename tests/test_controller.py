@@ -708,3 +708,38 @@ def test_a_preset_only_device_switch_keeps_edited_levels(ee_root, lv2, monkeypat
     assert pipeline.levels == {"FC": 4.0}
     assert pipeline.levels_owner == "a"
     assert pipeline.levels_unsaved
+
+
+def watchdog_pipeline(monkeypatch, present):
+    from types import SimpleNamespace
+    pipeline = make_pipeline(monkeypatch)
+    pipeline._taps = ["surround", "equalizer_0", "bass_loudness_0", "limiter_0"]
+    pipeline.control_node, pipeline.playback_node = "skitz_effects", "skitz_output"
+    pipeline._proc = SimpleNamespace(returncode=None)
+    pipeline._started = 0.0
+    pipeline._failures = 0
+    pipeline.controller.pw = SimpleNamespace(node_id=lambda name: 1 if name in present else None)
+    pipeline.stopped = []
+    monkeypatch.setattr(type(pipeline), "_stop_chain", lambda self: self.stopped.append(1))
+    return pipeline
+
+
+def stage_nodes():
+    from skitz_effects import graph
+    names = graph.stream_names(["surround", "equalizer_0", "bass_loudness_0", "limiter_0"],
+                               "skitz_effects", "skitz_output")
+    return {name for pair in names for name in pair}
+
+
+def test_the_watchdog_restarts_a_chain_whose_last_stage_is_gone(monkeypatch):
+    pipeline = watchdog_pipeline(monkeypatch, stage_nodes() - {"skitz_output", "skitz_effects.limiter_0"})
+    pipeline._check_chain()
+    assert pipeline.stopped == [1]
+    assert pipeline.rebuilds == [1]
+
+
+def test_the_watchdog_leaves_a_whole_chain_alone(monkeypatch):
+    pipeline = watchdog_pipeline(monkeypatch, stage_nodes())
+    pipeline._check_chain()
+    assert pipeline.stopped == []
+    assert pipeline.rebuilds == []

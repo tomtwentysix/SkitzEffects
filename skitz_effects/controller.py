@@ -604,7 +604,9 @@ class Pipeline(GObject.Object):
         """
         if not self.chain_running or time.monotonic() - self._started < 3:
             return False
-        if self.pw.node_id(self.control_node) is not None:
+        # Each step has streams of its own, so the step playing into a device can lose them alone.
+        names = graph.stream_names(self._taps, self.control_node, self.playback_node)
+        if all(self.pw.node_id(name) is not None for pair in names for name in pair):
             self._failures = 0
         elif self._failures < 3:
             self._failures += 1
